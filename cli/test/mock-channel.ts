@@ -57,7 +57,9 @@ export function startMockChannel(opts: MockOpts) {
             );
           }
         }
-        if (opts.dropFirstConnection && connectionCount === 1) ws.close(1006, "drop");
+        if (opts.dropFirstConnection && connectionCount === 1) {
+          setTimeout(() => ws.close(1006, "drop"), 20);
+        }
       },
       message(ws, raw) {
         const frame = JSON.parse(String(raw));

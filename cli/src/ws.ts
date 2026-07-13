@@ -74,11 +74,6 @@ export async function openChannel(
   let gotFirstHello = false;
   let swallowHello = false; // 重连后的 hello 不入队
   let attempt = 0;
-  // message 类 send 在收到匹配 idem_key 的 sent 回执前视为「未确认」；
-  // 断线重连窗口内发出的 send 可能在旧连接已被对端判定关闭后才真正写入 socket，
-  // 从而被静默丢弃（TCP/WS 层不会对此抛错）。重连后对未确认的 message 重放，
-  // 保证 reconnect:true 时 send() 的可靠投递（不依赖旧连接是否真正把字节发出去）。
-  const unconfirmed = new Map<string, SendFrame>();
   let helloResolve!: (h: HelloFrame) => void;
   let helloReject!: (e: unknown) => void;
   const helloPromise = new Promise<HelloFrame>((res, rej) => {
@@ -94,10 +89,6 @@ export async function openChannel(
         if (!gotFirstHello) {
           gotFirstHello = true;
           helloResolve(frame);
-        } else if (swallowHello) {
-          // 重连后拿到新连接的 hello：把重连窗口内可能被旧连接静默丢弃的
-          // message 类 send 在新连接上重放一遍。
-          for (const f of unconfirmed.values()) ws.send(JSON.stringify(f));
         }
         // 无论首连还是重连，hello 本身不进 frames
         swallowHello = false;
@@ -108,7 +99,6 @@ export async function openChannel(
         return;
       }
       if (frame.type === "msg") lastSeq = frame.seq;
-      if (frame.type === "sent") unconfirmed.delete(frame.idem_key);
       if (frame.type === "error" && isTerminalCode(frame.code)) {
         queue.push(frame);
         queue.finish();
@@ -147,7 +137,6 @@ export async function openChannel(
     hello,
     frames: queue,
     send: (f: SendFrame) => {
-      if (f.type === "send" && f.kind === "message") unconfirmed.set(f.idem_key, f);
       ws.send(JSON.stringify(f));
     },
     close: () => {
