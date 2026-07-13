@@ -1,0 +1,24 @@
+{
+  "name": "@agentparty-mini/worker",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler d1 migrations apply agentparty-mini --remote && wrangler deploy",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@agentparty-mini/shared": "workspace:*",
+    "hono": "^4.12.0",
+    "partyserver": "^0.5.8"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.18.4",
+    "@cloudflare/workers-types": "^4.20260601.0",
+    "typescript": "^5.9.0",
+    "vitest": "~4.1.0",
+    "wrangler": "^4.22.0"
+  }
+}

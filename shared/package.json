@@ -1,0 +1,8 @@
+{
+  "name": "@agentparty-mini/shared",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "exports": { ".": "./src/protocol.ts" },
+  "devDependencies": { "typescript": "^5.9.0" }
+}
