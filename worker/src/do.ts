@@ -2,6 +2,7 @@ import {
   extractMentions,
   IDEMPOTENCY_WINDOW_MS,
   LOOP_GUARD_N,
+  RATE_LIMIT_PER_MIN,
   RETAIN_N,
   type PresenceEntry,
   type SendFrame,
@@ -93,6 +94,57 @@ export class ChannelDO extends Server<Env> {
       .exec("SELECT name FROM presence ORDER BY name")
       .toArray()
       .map((r) => this.presenceEntry(String(r.name)));
+  }
+
+  private rateLimited(name: string, now: number): boolean {
+    const limit = Number(this.env.RATE_LIMIT_PER_MIN ?? RATE_LIMIT_PER_MIN);
+    const row = this.db.exec("SELECT window_start, count FROM rate WHERE name = ?", name).toArray()[0];
+    if (!row || now - Number(row.window_start) >= 60_000) {
+      this.db.exec(
+        `INSERT INTO rate (name, window_start, count) VALUES (?, ?, 1)
+         ON CONFLICT(name) DO UPDATE SET window_start = excluded.window_start, count = 1`,
+        name,
+        now,
+      );
+      return false;
+    }
+    if (Number(row.count) >= limit) return true;
+    this.db.exec("UPDATE rate SET count = count + 1 WHERE name = ?", name);
+    return false;
+  }
+
+  private insertSystemMessage(body: string, now: number) {
+    const seq = Number(
+      this.db
+        .exec(
+          `INSERT INTO messages (ts, sender, sender_kind, body, mentions, reply_to, idem_key)
+           VALUES (?, 'system', 'agent', ?, '[]', NULL, NULL) RETURNING seq`,
+          now,
+          body,
+        )
+        .toArray()[0].seq,
+    );
+    this.broadcastFrame({
+      type: "msg",
+      seq,
+      ts: now,
+      sender: "system",
+      sender_kind: "agent",
+      body,
+      mentions: [],
+      reply_to: null,
+    });
+  }
+
+  async onRequest(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    if (request.method === "POST" && url.pathname === "/internal/config") {
+      const patch = (await request.json()) as { guard?: number; archived?: boolean };
+      if (patch.guard !== undefined) this.setMeta("guard", String(patch.guard));
+      if (patch.archived !== undefined) this.setMeta("archived", patch.archived ? "1" : "0");
+      return Response.json({ ok: true });
+    }
+    return new Response("not found", { status: 404 });
   }
 
   private rowToMsg(r: Record<string, unknown>): ServerFrame {
@@ -201,6 +253,34 @@ export class ChannelDO extends Server<Env> {
     frame: SendFrame & { kind: "message" },
     now: number,
   ) {
+    if (this.rateLimited(state.name, now)) {
+      this.sendFrame(connection, {
+        type: "error",
+        code: "rate_limited",
+        message: "rate limit exceeded, slow down",
+      });
+      return;
+    }
+    // loop guard：连续 agent 消息熔断，human 发言即人类锚点
+    const guardLimit = Number(this.getMeta("guard") ?? 0);
+    if (state.kind === "agent" && guardLimit > 0) {
+      const streak = Number(this.getMeta("agent_streak") ?? "0");
+      if (streak >= guardLimit) {
+        if (this.getMeta("guard_tripped") !== "1") {
+          this.setMeta("guard_tripped", "1");
+          this.insertSystemMessage(
+            `loop guard: ${guardLimit} consecutive agent messages, agents are paused until a human speaks`,
+            now,
+          );
+        }
+        this.sendFrame(connection, {
+          type: "error",
+          code: "loop_guard",
+          message: `loop guard tripped (limit ${guardLimit}); a human must speak to reset`,
+        });
+        return;
+      }
+    }
     // 幂等：窗口内同 key 重发 sent（同 seq），不落新行不广播
     const dup = this.db
       .exec(
@@ -244,5 +324,11 @@ export class ChannelDO extends Server<Env> {
       mentions,
       reply_to: frame.reply_to ?? null,
     });
+    if (state.kind === "human") {
+      this.setMeta("agent_streak", "0");
+      this.setMeta("guard_tripped", "0");
+    } else {
+      this.setMeta("agent_streak", String(Number(this.getMeta("agent_streak") ?? "0") + 1));
+    }
   }
 }

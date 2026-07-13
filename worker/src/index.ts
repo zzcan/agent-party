@@ -31,6 +31,19 @@ const requireAuth = async (c: any, next: any) => {
   await next();
 };
 
+export async function pokeChannelConfig(
+  env: Env,
+  slug: string,
+  patch: { guard?: number; archived?: boolean },
+): Promise<void> {
+  const stub = env.CHANNELS.get(env.CHANNELS.idFromName(slug));
+  await stub.fetch("https://do/internal/config", {
+    method: "POST",
+    headers: { "x-partykit-room": slug, "content-type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+}
+
 app.get("/api/health", (c) => c.json({ ok: true }));
 
 app.post("/api/tokens", requireAdmin, async (c) => {
@@ -113,6 +126,10 @@ app.put("/api/channels/:slug/guard", requireAuth, async (c) => {
     .bind(limit, c.req.param("slug"))
     .run();
   if (r.meta.changes === 0) return c.json({ error: "channel not found" }, 404);
+  const ch = await c.env.DB.prepare("SELECT mode, guard_limit FROM channels WHERE slug = ?")
+    .bind(c.req.param("slug"))
+    .first<{ mode: ChannelMode; guard_limit: number | null }>();
+  if (ch) await pokeChannelConfig(c.env, c.req.param("slug"), { guard: resolveGuardLimit(ch.mode, ch.guard_limit) });
   return c.json({ ok: true });
 });
 
