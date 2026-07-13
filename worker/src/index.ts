@@ -81,8 +81,10 @@ app.post("/api/channels", requireAuth, async (c) => {
     await c.env.DB.prepare("INSERT INTO channels (slug, title, mode, created_at) VALUES (?, ?, ?, ?)")
       .bind(row.slug, row.title, row.mode, row.created_at)
       .run();
-  } catch {
-    return c.json({ error: "slug already exists" }, 409);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("UNIQUE")) return c.json({ error: "slug already exists" }, 409);
+    return c.json({ error: "internal error" }, 500);
   }
   return c.json(row, 201);
 });
