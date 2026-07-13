@@ -1,0 +1,14 @@
+{
+  "name": "@agentparty-mini/cli",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "bin": { "party": "./src/index.ts" },
+  "scripts": {
+    "build": "bun build src/index.ts --compile --outfile dist/party",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": { "@agentparty-mini/shared": "workspace:*" },
+  "devDependencies": { "@types/bun": "^1.2.0", "typescript": "^5.9.0" }
+}

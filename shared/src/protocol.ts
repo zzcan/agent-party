@@ -70,6 +70,14 @@ export function extractMentions(body: string): string[] {
   return [...out];
 }
 
+// cli 退出码（Plan 3 的 serve supervisor 复用）
+export const EXIT_OK = 0;
+export const EXIT_ERROR = 1;
+export const EXIT_AUTH = 3;
+export const EXIT_LOOP_GUARD = 4;
+export const EXIT_ARCHIVED = 5;
+export const EXIT_RATE_LIMITED = 9;
+
 const STATUS_STATES: readonly string[] = ["working", "waiting", "blocked", "done"];
 
 export function parseSendFrame(raw: string): { frame: SendFrame } | { error: string } {
