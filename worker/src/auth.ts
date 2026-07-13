@@ -17,7 +17,10 @@ export function generateToken(): string {
 function tokenFromRequest(req: Request): string | null {
   const auth = req.headers.get("authorization");
   if (auth?.startsWith("Bearer ")) return auth.slice(7);
-  // 浏览器 WebSocket 无法带 Authorization 头，Web 端 WS 走 query 参数
+  // 浏览器 WebSocket 无法带 Authorization 头，仅 WS upgrade 请求允许走 query 参数；
+  // 普通 REST 请求不接受 ?token=，避免 token 经代理/CDN 日志、浏览器历史、Referer 泄漏。
+  const isWsUpgrade = req.headers.get("upgrade")?.toLowerCase() === "websocket";
+  if (!isWsUpgrade) return null;
   const q = new URL(req.url).searchParams.get("token");
   return q || null;
 }

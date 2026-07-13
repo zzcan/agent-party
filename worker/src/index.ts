@@ -44,8 +44,10 @@ app.post("/api/tokens", requireAdmin, async (c) => {
     await c.env.DB.prepare("INSERT INTO tokens (name, hash, kind, created_at) VALUES (?, ?, ?, ?)")
       .bind(name, hash, kind, Date.now())
       .run();
-  } catch {
-    return c.json({ error: "name already exists" }, 409);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("UNIQUE")) return c.json({ error: "name already exists" }, 409);
+    return c.json({ error: "internal error" }, 500);
   }
   return c.json({ token, name, kind }, 201);
 });

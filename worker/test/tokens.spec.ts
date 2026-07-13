@@ -56,6 +56,12 @@ describe("tokens", () => {
     expect(dup.status).toBe(409);
   });
 
+  it("REST 端点仅接受 Bearer header，?token= 不生效（防止 URL 泄漏）", async () => {
+    const token = await mintToken("t4-querytoken", "agent");
+    const me = await SELF.fetch(`https://x/api/me?token=${token}`);
+    expect(me.status).toBe(401);
+  });
+
   it("吊销后 /api/me 返回 401", async () => {
     const token = await mintToken("t4-gone", "human");
     const del = await SELF.fetch("https://x/api/tokens/t4-gone", { method: "DELETE", headers: ADMIN });
