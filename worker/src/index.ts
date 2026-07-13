@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { isName, RESERVED_NAMES } from "@agentparty-mini/shared";
+import { isName, resolveGuardLimit, RESERVED_NAMES, type ChannelMode } from "@agentparty-mini/shared";
 import { generateToken, identityFromRequest, sha256Hex, type Identity } from "./auth";
 import { ChannelDO } from "./do";
 
@@ -114,6 +114,35 @@ app.put("/api/channels/:slug/guard", requireAuth, async (c) => {
     .run();
   if (r.meta.changes === 0) return c.json({ error: "channel not found" }, 404);
   return c.json({ ok: true });
+});
+
+const AP_HEADERS = ["x-ap-name", "x-ap-kind", "x-ap-hash", "x-ap-mode", "x-ap-guard", "x-ap-archived"];
+
+app.get("/api/channels/:slug/ws", async (c) => {
+  if (c.req.header("upgrade")?.toLowerCase() !== "websocket") {
+    return c.json({ error: "websocket upgrade required" }, 426);
+  }
+  const identity = await identityFromRequest(c.env.DB, c.req.raw);
+  if (!identity) return c.json({ error: "invalid or revoked token" }, 401);
+  const slug = c.req.param("slug");
+  const channel = await c.env.DB.prepare(
+    "SELECT slug, mode, guard_limit, archived_at FROM channels WHERE slug = ?",
+  )
+    .bind(slug)
+    .first<{ slug: string; mode: ChannelMode; guard_limit: number | null; archived_at: number | null }>();
+  if (!channel) return c.json({ error: "channel not found" }, 404);
+  // 客户端注入的 x-ap-* 一律剥离，再写 worker 权威值（DO 无条件信任这些头）
+  const fwd = new Request(c.req.raw);
+  for (const h of AP_HEADERS) fwd.headers.delete(h);
+  fwd.headers.set("x-partykit-room", slug);
+  fwd.headers.set("x-ap-name", identity.name);
+  fwd.headers.set("x-ap-kind", identity.kind);
+  fwd.headers.set("x-ap-hash", identity.hash);
+  fwd.headers.set("x-ap-mode", channel.mode);
+  fwd.headers.set("x-ap-guard", String(resolveGuardLimit(channel.mode, channel.guard_limit)));
+  fwd.headers.set("x-ap-archived", channel.archived_at !== null ? "1" : "0");
+  const stub = c.env.CHANNELS.get(c.env.CHANNELS.idFromName(slug));
+  return stub.fetch(fwd);
 });
 
 export { ChannelDO };
