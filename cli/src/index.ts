@@ -1,4 +1,5 @@
 import { EXIT_ERROR, EXIT_OK } from "@agentparty-mini/shared";
+import { whoami } from "./commands/whoami";
 import { CliError } from "./errors";
 import pkg from "../package.json" with { type: "json" };
 
@@ -29,6 +30,10 @@ export async function main(argv: string[]): Promise<number> {
     }
     if (!cmd || cmd === "--help" || cmd === "-h" || cmd === "help") {
       process.stdout.write(`${HELP}\n`);
+      return EXIT_OK;
+    }
+    if (cmd === "whoami") {
+      whoami();
       return EXIT_OK;
     }
     // 命令表在后续任务逐个填充
