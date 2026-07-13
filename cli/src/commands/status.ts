@@ -2,7 +2,7 @@ import { EXIT_ERROR, type StatusState } from "@agentparty-mini/shared";
 import { parseArgs } from "../args";
 import { loadConfig, resolveChannel, type Config } from "../config";
 import { CliError } from "../errors";
-import { openChannel as defaultOpen } from "../ws";
+import { exitCodeFor, openChannel as defaultOpen } from "../ws";
 
 interface Deps {
   open?: typeof defaultOpen;
@@ -19,12 +19,14 @@ export async function status(argv: string[], deps: Deps = {}): Promise<void> {
   const cfg = deps.cfg ?? loadConfig();
   const open = deps.open ?? defaultOpen;
   const channel = resolveChannel(cfg, flags.channel as string | undefined);
-  const ch = await open({ server: cfg.server, token: cfg.token }, channel);
+  const server = (flags.server as string | undefined) ?? cfg.server;
+  const token = (flags.token as string | undefined) ?? cfg.token;
+  const ch = await open({ server, token }, channel);
   try {
     ch.send({ type: "send", kind: "status", state: state as StatusState, ...(note ? { note } : {}) });
     for await (const f of ch.frames) {
       if (f.type === "presence" && f.entry.name === ch.hello.self && f.entry.state === state) break;
-      if (f.type === "error") throw new CliError(EXIT_ERROR, `status failed: ${f.message}`);
+      if (f.type === "error") throw new CliError(exitCodeFor(f.code), `status failed: ${f.message}`);
     }
     process.stdout.write(`status set: ${state}\n`);
   } finally {

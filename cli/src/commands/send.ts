@@ -2,7 +2,7 @@ import { EXIT_ERROR } from "@agentparty-mini/shared";
 import { parseArgs } from "../args";
 import { loadConfig, loadCursor, resolveChannel, saveCursor, type Config } from "../config";
 import { CliError } from "../errors";
-import { openChannel as defaultOpen } from "../ws";
+import { exitCodeFor, openChannel as defaultOpen } from "../ws";
 
 interface Deps {
   open?: typeof defaultOpen;
@@ -32,8 +32,10 @@ export async function send(argv: string[], deps: Deps = {}): Promise<void> {
   const cfg = deps.cfg ?? loadConfig();
   const open = deps.open ?? defaultOpen;
   const channel = resolveChannel(cfg, flags.channel as string | undefined);
+  const server = (flags.server as string | undefined) ?? cfg.server;
+  const token = (flags.token as string | undefined) ?? cfg.token;
   const idem = crypto.randomUUID();
-  const ch = await open({ server: cfg.server, token: cfg.token }, channel);
+  const ch = await open({ server, token }, channel);
   try {
     ch.send({ type: "send", kind: "message", body, idem_key: idem, ...(replyTo ? { reply_to: replyTo } : {}) });
     for await (const f of ch.frames) {
@@ -42,7 +44,7 @@ export async function send(argv: string[], deps: Deps = {}): Promise<void> {
         if (f.seq > loadCursor(cfg.server, channel)) saveCursor(cfg.server, channel, f.seq);
         return;
       }
-      if (f.type === "error") throw new CliError(EXIT_ERROR, `send failed: ${f.message}`);
+      if (f.type === "error") throw new CliError(exitCodeFor(f.code), `send failed: ${f.message}`);
     }
     throw new CliError(EXIT_ERROR, "connection closed before send was acknowledged");
   } finally {

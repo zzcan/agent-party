@@ -4,7 +4,7 @@ import { status } from "../src/commands/status";
 import { openChannel } from "../src/ws";
 import { startMockChannel } from "./mock-channel";
 import { CliError } from "../src/errors";
-import { EXIT_ERROR } from "@agentparty-mini/shared";
+import { EXIT_ERROR, EXIT_RATE_LIMITED } from "@agentparty-mini/shared";
 
 let stop: (() => void) | null = null;
 afterEach(() => { stop?.(); stop = null; });
@@ -53,5 +53,18 @@ describe("status", () => {
     stop = m.stop;
     const out = await captureStdout(() => status(["blocked", "waiting on CI"], { open: openChannel, cfg: { ...cfg, server: m.url } }));
     expect(out).toContain("status set: blocked");
+  });
+
+  test("post-hello error{rate_limited} 映射为 EXIT_RATE_LIMITED", async () => {
+    const m = startMockChannel({ self: "me", kind: "human", errorAfterHello: { code: "rate_limited", message: "too many requests" } });
+    stop = m.stop;
+    let caught: unknown;
+    try {
+      await status(["working"], { open: openChannel, cfg: { ...cfg, server: m.url } });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(CliError);
+    expect((caught as CliError).code).toBe(EXIT_RATE_LIMITED);
   });
 });

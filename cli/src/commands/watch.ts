@@ -1,23 +1,12 @@
-import { EXIT_AUTH, EXIT_ARCHIVED, EXIT_ERROR, EXIT_LOOP_GUARD, EXIT_RATE_LIMITED, type ErrorCode } from "@agentparty-mini/shared";
 import { parseArgs } from "../args";
 import { loadConfig, loadCursor, resolveChannel, saveCursor, type Config } from "../config";
 import { CliError } from "../errors";
 import { formatMsg, formatPresence, ndjson } from "../format";
-import { openChannel as defaultOpen } from "../ws";
+import { exitCodeFor, openChannel as defaultOpen } from "../ws";
 
 interface Deps {
   open?: typeof defaultOpen;
   cfg?: Config;
-}
-
-function exitCodeFor(code: ErrorCode): number {
-  switch (code) {
-    case "auth": return EXIT_AUTH;
-    case "archived": return EXIT_ARCHIVED;
-    case "loop_guard": return EXIT_LOOP_GUARD;
-    case "rate_limited": return EXIT_RATE_LIMITED;
-    default: return EXIT_ERROR;
-  }
 }
 
 export async function watch(argv: string[], deps: Deps = {}): Promise<void> {
@@ -28,11 +17,13 @@ export async function watch(argv: string[], deps: Deps = {}): Promise<void> {
   const cfg = deps.cfg ?? loadConfig();
   const open = deps.open ?? defaultOpen;
   const channel = resolveChannel(cfg, flags.channel as string | undefined);
+  const server = (flags.server as string | undefined) ?? cfg.server;
+  const token = (flags.token as string | undefined) ?? cfg.token;
   const once = flags.once === true;
   const mentionsOnly = flags["mentions-only"] === true;
   const json = flags.json === true;
   const after = loadCursor(cfg.server, channel);
-  const ch = await open({ server: cfg.server, token: cfg.token }, channel, { after, reconnect: !once });
+  const ch = await open({ server, token }, channel, { after, reconnect: !once });
   const selfTag = `@${ch.hello.self}`;
   try {
     for await (const f of ch.frames) {

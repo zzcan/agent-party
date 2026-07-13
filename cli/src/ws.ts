@@ -1,4 +1,13 @@
-import { EXIT_ARCHIVED, EXIT_AUTH, type SendFrame, type ServerFrame } from "@agentparty-mini/shared";
+import {
+  EXIT_ARCHIVED,
+  EXIT_AUTH,
+  EXIT_ERROR,
+  EXIT_LOOP_GUARD,
+  EXIT_RATE_LIMITED,
+  type ErrorCode,
+  type SendFrame,
+  type ServerFrame,
+} from "@agentparty-mini/shared";
 import { CliError } from "./errors";
 
 export type HelloFrame = Extract<ServerFrame, { type: "hello" }>;
@@ -27,6 +36,16 @@ export function toWsUrl(server: string, channel: string, token: string, after?: 
 
 function isTerminalCode(code: string): boolean {
   return code === "auth" || code === "archived";
+}
+
+export function exitCodeFor(code: ErrorCode): number {
+  switch (code) {
+    case "auth": return EXIT_AUTH;
+    case "archived": return EXIT_ARCHIVED;
+    case "loop_guard": return EXIT_LOOP_GUARD;
+    case "rate_limited": return EXIT_RATE_LIMITED;
+    default: return EXIT_ERROR;
+  }
 }
 function terminalError(frame: Extract<ServerFrame, { type: "error" }>): CliError {
   const code = frame.code === "archived" ? EXIT_ARCHIVED : EXIT_AUTH;

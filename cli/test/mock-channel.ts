@@ -9,11 +9,13 @@ export interface MockOpts {
   history?: { seq: number; sender: string; body: string }[]; // 供 ?after= 补拉
   connectError?: { code: string; message: string }; // 若设，连接即发 error+close(1008)，不发 hello
   dropFirstConnection?: boolean; // 第一条连接发完 hello 后立即 close（测重连）
+  errorAfterHello?: { code: string; message: string }; // 若设，hello 之后收到的第一条客户端消息回复 error 而非正常处理
 }
 
 export function startMockChannel(opts: MockOpts) {
   let seqCounter = opts.history?.length ? Math.max(...opts.history.map((h) => h.seq)) : 0;
   let connectionCount = 0;
+  let sentErrorAfterHello = false;
   const kind = opts.kind ?? "human";
   const server = Bun.serve<{ url: string }, never>({
     port: 0,
@@ -62,6 +64,11 @@ export function startMockChannel(opts: MockOpts) {
         }
       },
       message(ws, raw) {
+        if (opts.errorAfterHello && !sentErrorAfterHello) {
+          sentErrorAfterHello = true;
+          ws.send(JSON.stringify({ type: "error", ...opts.errorAfterHello }));
+          return;
+        }
         const frame = JSON.parse(String(raw));
         if (frame.kind === "message") {
           const seq = ++seqCounter;

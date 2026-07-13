@@ -2,10 +2,12 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { EXIT_LOOP_GUARD } from "@agentparty-mini/shared";
 import { send } from "../src/commands/send";
 import { openChannel } from "../src/ws";
 import { startMockChannel } from "./mock-channel";
 import { loadCursor } from "../src/config";
+import { CliError } from "../src/errors";
 
 let dir: string;
 let stop: (() => void) | null = null;
@@ -60,5 +62,28 @@ describe("send", () => {
     };
     await send(["-"], { open, cfg, stdin: async () => "piped body\n" });
     expect(captured).toBe("piped body");
+  });
+
+  test("post-hello error{loop_guard} 映射为 EXIT_LOOP_GUARD", async () => {
+    const m = startMockChannel({ self: "me", errorAfterHello: { code: "loop_guard", message: "channel is loop-guarded" } });
+    stop = m.stop;
+    const cfg = { server: m.url, token: "ap_me", channel: "mock", name: "me", kind: "human" as const };
+    let caught: unknown;
+    try {
+      await send(["hello world"], { open: openChannel, cfg });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(CliError);
+    expect((caught as CliError).code).toBe(EXIT_LOOP_GUARD);
+  });
+
+  test("--server 覆盖优先于 cfg.server（连的是 mock 而不是 cfg 里的死地址）", async () => {
+    const m = startMockChannel({ self: "me" });
+    stop = m.stop;
+    const cfg = { server: "http://127.0.0.1:1", token: "ap_me", channel: "mock", name: "me", kind: "human" as const };
+    await send(["hello via override", "--server", m.url], { open: openChannel, cfg });
+    // 若真的连去了 cfg.server（死地址），send 会抛错而不是推进游标
+    expect(loadCursor(cfg.server, "mock")).toBe(1);
   });
 });
