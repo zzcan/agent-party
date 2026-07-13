@@ -1,10 +1,14 @@
 import {
+  extractMentions,
+  IDEMPOTENCY_WINDOW_MS,
   LOOP_GUARD_N,
   type PresenceEntry,
+  type SendFrame,
   type SenderKind,
   type ServerFrame,
+  parseSendFrame,
 } from "@agentparty-mini/shared";
-import { Server, type Connection, type ConnectionContext } from "partyserver";
+import { Server, type Connection, type ConnectionContext, type WSMessage } from "partyserver";
 import type { Env } from "./index";
 
 export interface ConnState {
@@ -136,5 +140,81 @@ export class ChannelDO extends Server<Env> {
     }
     this.db.exec("UPDATE presence SET connected = 0, last_seen = ? WHERE name = ?", Date.now(), name);
     this.broadcastFrame({ type: "presence", entry: this.presenceEntry(name) });
+  }
+
+  async onMessage(connection: Connection<ConnState>, message: WSMessage) {
+    const state = connection.state;
+    if (!state) return;
+    const parsed = parseSendFrame(typeof message === "string" ? message : "");
+    if ("error" in parsed) {
+      this.sendFrame(connection, { type: "error", code: "bad_frame", message: parsed.error });
+      return;
+    }
+    const now = Date.now();
+    this.db.exec("UPDATE presence SET last_seen = ? WHERE name = ?", now, state.name);
+    if (parsed.frame.kind === "status") {
+      this.handleStatus(state, parsed.frame, now);
+      return;
+    }
+    this.handleMessage(connection, state, parsed.frame, now);
+  }
+
+  private handleStatus(state: ConnState, frame: SendFrame & { kind: "status" }, now: number) {
+    this.db.exec(
+      "UPDATE presence SET state = ?, note = ?, last_seen = ? WHERE name = ?",
+      frame.state,
+      frame.note ?? null,
+      now,
+      state.name,
+    );
+    this.broadcastFrame({ type: "presence", entry: this.presenceEntry(state.name) });
+  }
+
+  private handleMessage(
+    connection: Connection<ConnState>,
+    state: ConnState,
+    frame: SendFrame & { kind: "message" },
+    now: number,
+  ) {
+    // 幂等：窗口内同 key 重发 sent（同 seq），不落新行不广播
+    const dup = this.db
+      .exec(
+        "SELECT seq FROM messages WHERE idem_key = ? AND ts > ?",
+        frame.idem_key,
+        now - IDEMPOTENCY_WINDOW_MS,
+      )
+      .toArray()[0];
+    if (dup) {
+      this.sendFrame(connection, { type: "sent", seq: Number(dup.seq), idem_key: frame.idem_key });
+      return;
+    }
+    const mentions = extractMentions(frame.body);
+    const seq = Number(
+      this.db
+        .exec(
+          `INSERT INTO messages (ts, sender, sender_kind, body, mentions, reply_to, idem_key)
+           VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING seq`,
+          now,
+          state.name,
+          state.kind,
+          frame.body,
+          JSON.stringify(mentions),
+          frame.reply_to ?? null,
+          frame.idem_key,
+        )
+        .toArray()[0].seq,
+    );
+    // 自回声顺序：发送方先收 sent 再看到自己的广播
+    this.sendFrame(connection, { type: "sent", seq, idem_key: frame.idem_key });
+    this.broadcastFrame({
+      type: "msg",
+      seq,
+      ts: now,
+      sender: state.name,
+      sender_kind: state.kind,
+      body: frame.body,
+      mentions,
+      reply_to: frame.reply_to ?? null,
+    });
   }
 }
