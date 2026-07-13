@@ -32,12 +32,21 @@ export class ChannelDO extends Server<Env> {
     const ttl = Number(this.env.AUTH_CACHE_TTL_MS ?? 60_000);
     const cached = this.tokenCache.get(hash);
     if (cached && Date.now() - cached.at < ttl) return cached.ok;
-    const row = await this.env.DB.prepare("SELECT 1 AS ok FROM tokens WHERE hash = ? AND revoked_at IS NULL")
-      .bind(hash)
-      .first();
-    const ok = row !== null;
-    this.tokenCache.set(hash, { ok, at: Date.now() });
-    return ok;
+    try {
+      const row = await this.env.DB.prepare("SELECT 1 AS ok FROM tokens WHERE hash = ? AND revoked_at IS NULL")
+        .bind(hash)
+        .first();
+      const ok = row !== null;
+      this.tokenCache.set(hash, { ok, at: Date.now() });
+      return ok;
+    } catch (e) {
+      // D1 抖了一下：onMessage 只 .catch(console.error)，这里若抛出会让客户端既收不到
+      // sent 也收不到 error，卡到自己的超时。宁可失活即通（fail-open）：有旧缓存就信旧缓存
+      // （哪怕已过期），没有就当作有效；绝不能把这次兜底结果当权威值写回缓存。
+      console.error("tokenActive: D1 query failed, failing open", e);
+      if (cached) return cached.ok;
+      return true;
+    }
   }
 
   async onAlarm() {

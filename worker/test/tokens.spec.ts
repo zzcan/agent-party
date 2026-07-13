@@ -1,4 +1,4 @@
-import { SELF } from "cloudflare:test";
+import { env, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
 const ADMIN = { "x-admin-secret": "test-admin-secret" };
@@ -15,13 +15,51 @@ export async function mintToken(name: string, kind: "agent" | "human"): Promise<
 }
 
 describe("tokens", () => {
-  it("无 admin secret 铸 token 返回 401", async () => {
+  it("无 admin secret 头铸 token 返回 401", async () => {
     const res = await SELF.fetch("https://x/api/tokens", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name: "t4-a", kind: "agent" }),
     });
     expect(res.status).toBe(401);
+  });
+
+  it("错误的 admin secret 头铸 token 返回 401", async () => {
+    const res = await SELF.fetch("https://x/api/tokens", {
+      method: "POST",
+      headers: { "x-admin-secret": "wrong-secret", "content-type": "application/json" },
+      body: JSON.stringify({ name: "t4-wrong", kind: "agent" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("ADMIN_SECRET 绑定未设置（空/undefined）时必须一律拒绝，不能因 header 也缺失而 undefined===undefined 放行", async () => {
+    const original = env.ADMIN_SECRET;
+    try {
+      // @ts-expect-error 测试内故意把 binding 置空，模拟未配置 ADMIN_SECRET 的部署
+      env.ADMIN_SECRET = undefined;
+      const noHeader = await SELF.fetch("https://x/api/tokens", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "t4-unset", kind: "agent" }),
+      });
+      expect(noHeader.status).toBe(401);
+
+      const emptyHeader = await SELF.fetch("https://x/api/tokens", {
+        method: "POST",
+        headers: { "x-admin-secret": "", "content-type": "application/json" },
+        body: JSON.stringify({ name: "t4-unset2", kind: "agent" }),
+      });
+      expect(emptyHeader.status).toBe(401);
+
+      const del = await SELF.fetch("https://x/api/tokens/whatever", {
+        method: "DELETE",
+        headers: {},
+      });
+      expect(del.status).toBe(401);
+    } finally {
+      env.ADMIN_SECRET = original;
+    }
   });
 
   it("铸 token 返回 ap_ 前缀，/api/me 能换回身份", async () => {

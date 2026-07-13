@@ -18,7 +18,9 @@ type Vars = { identity: Identity };
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
 
 const requireAdmin = async (c: any, next: any) => {
-  if (c.req.header("x-admin-secret") !== c.env.ADMIN_SECRET) {
+  // 空/未设置的 ADMIN_SECRET 必须一律拒绝：否则 undefined !== undefined 为 false，
+  // 未配置该绑定 + 请求不带头，两边都是 undefined，校验会被静默放行。
+  if (!c.env.ADMIN_SECRET || c.req.header("x-admin-secret") !== c.env.ADMIN_SECRET) {
     return c.json({ error: "admin secret required" }, 401);
   }
   await next();
