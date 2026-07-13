@@ -28,14 +28,14 @@ export async function restFetch(path: string, opts: RestOpts, fetchImpl: typeof 
 }
 
 export const getMe = (o: RestOpts, f?: typeof fetch) => restFetch("/api/me", o, f);
-export const mintToken = (o: RestOpts, name: string, kind: "agent" | "human") =>
-  restFetch("/api/tokens", { ...o, method: "POST", body: { name, kind } });
-export const revokeToken = (o: RestOpts, name: string) =>
-  restFetch(`/api/tokens/${name}`, { ...o, method: "DELETE" });
-export const createChannel = (o: RestOpts, body: { slug: string; title?: string; mode?: string }) =>
-  restFetch("/api/channels", { ...o, method: "POST", body });
-export const listChannels = (o: RestOpts) => restFetch("/api/channels", o);
-export const archiveChannel = (o: RestOpts, slug: string) =>
-  restFetch(`/api/channels/${slug}/archive`, { ...o, method: "POST" });
-export const setGuard = (o: RestOpts, slug: string, limit: number | null) =>
-  restFetch(`/api/channels/${slug}/guard`, { ...o, method: "PUT", body: { limit } });
+export const mintToken = (o: RestOpts, name: string, kind: "agent" | "human", f?: typeof fetch) =>
+  restFetch("/api/tokens", { ...o, method: "POST", body: { name, kind } }, f);
+export const revokeToken = (o: RestOpts, name: string, f?: typeof fetch) =>
+  restFetch(`/api/tokens/${name}`, { ...o, method: "DELETE" }, f);
+export const createChannel = (o: RestOpts, body: { slug: string; title?: string; mode?: string }, f?: typeof fetch) =>
+  restFetch("/api/channels", { ...o, method: "POST", body }, f);
+export const listChannels = (o: RestOpts, f?: typeof fetch) => restFetch("/api/channels", o, f);
+export const archiveChannel = (o: RestOpts, slug: string, f?: typeof fetch) =>
+  restFetch(`/api/channels/${slug}/archive`, { ...o, method: "POST" }, f);
+export const setGuard = (o: RestOpts, slug: string, limit: number | null, f?: typeof fetch) =>
+  restFetch(`/api/channels/${slug}/guard`, { ...o, method: "PUT", body: { limit } }, f);
