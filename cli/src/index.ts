@@ -1,6 +1,7 @@
 import { EXIT_ERROR, EXIT_OK } from "@agentparty-mini/shared";
 import { channelCmd } from "./commands/channel";
 import { init } from "./commands/init";
+import { send } from "./commands/send";
 import { status } from "./commands/status";
 import { tokenCmd } from "./commands/token";
 import { who } from "./commands/who";
@@ -59,6 +60,10 @@ export async function main(argv: string[]): Promise<number> {
     }
     if (cmd === "status") {
       await status(rest);
+      return EXIT_OK;
+    }
+    if (cmd === "send") {
+      await send(rest);
       return EXIT_OK;
     }
     // 命令表在后续任务逐个填充
