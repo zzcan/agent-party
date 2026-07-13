@@ -2,6 +2,7 @@ import {
   extractMentions,
   IDEMPOTENCY_WINDOW_MS,
   LOOP_GUARD_N,
+  RETAIN_N,
   type PresenceEntry,
   type SendFrame,
   type SenderKind,
@@ -94,6 +95,19 @@ export class ChannelDO extends Server<Env> {
       .map((r) => this.presenceEntry(String(r.name)));
   }
 
+  private rowToMsg(r: Record<string, unknown>): ServerFrame {
+    return {
+      type: "msg",
+      seq: Number(r.seq),
+      ts: Number(r.ts),
+      sender: String(r.sender),
+      sender_kind: r.sender_kind === "agent" ? "agent" : "human",
+      body: String(r.body),
+      mentions: JSON.parse(String(r.mentions)) as string[],
+      reply_to: r.reply_to === null ? null : Number(r.reply_to),
+    };
+  }
+
   onConnect(connection: Connection<ConnState>, ctx: ConnectionContext) {
     const h = ctx.request.headers;
     const state: ConnState = {
@@ -128,6 +142,17 @@ export class ChannelDO extends Server<Env> {
       guard: Number(this.getMeta("guard") ?? LOOP_GUARD_N),
       presence: this.presenceList(),
     });
+    // 断线补拉：hello 之后、实时流之前回放历史
+    const after = Number(new URL(ctx.request.url).searchParams.get("after") ?? NaN);
+    if (Number.isInteger(after) && after >= 0) {
+      const rows = this.db
+        .exec(
+          "SELECT seq, ts, sender, sender_kind, body, mentions, reply_to FROM messages WHERE seq > ? ORDER BY seq",
+          after,
+        )
+        .toArray();
+      for (const r of rows) this.sendFrame(connection, this.rowToMsg(r));
+    }
     this.broadcastFrame({ type: "presence", entry: this.presenceEntry(state.name) });
   }
 
@@ -204,6 +229,9 @@ export class ChannelDO extends Server<Env> {
         )
         .toArray()[0].seq,
     );
+    // 修剪超出保留窗口的最老消息（seq 不复用）
+    const retainN = Number(this.env.RETAIN_N ?? RETAIN_N);
+    this.db.exec("DELETE FROM messages WHERE seq <= ?", seq - retainN);
     // 自回声顺序：发送方先收 sent 再看到自己的广播
     this.sendFrame(connection, { type: "sent", seq, idem_key: frame.idem_key });
     this.broadcastFrame({
