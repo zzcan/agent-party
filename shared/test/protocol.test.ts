@@ -3,7 +3,10 @@ import {
   BODY_LIMIT,
   extractMentions,
   isName,
+  LOOP_GUARD_N,
+  LOOP_GUARD_PARTY_N,
   parseSendFrame,
+  resolveGuardLimit,
 } from "../src/protocol";
 
 describe("isName", () => {
@@ -77,5 +80,14 @@ describe("parseSendFrame", () => {
           JSON.stringify({ type: "send", kind: "message", body: "x", idem_key: "k", reply_to: -1 }),
         ),
     ).toBe(true);
+  });
+});
+
+describe("resolveGuardLimit", () => {
+  test("NULL 按 mode 默认，显式值原样", () => {
+    expect(resolveGuardLimit("normal", null)).toBe(LOOP_GUARD_N);
+    expect(resolveGuardLimit("party", null)).toBe(LOOP_GUARD_PARTY_N);
+    expect(resolveGuardLimit("party", 0)).toBe(0);
+    expect(resolveGuardLimit("normal", 7)).toBe(7);
   });
 });

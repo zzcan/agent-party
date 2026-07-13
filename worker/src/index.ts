@@ -64,5 +64,55 @@ app.get("/api/me", requireAuth, (c) => {
   return c.json({ name, kind });
 });
 
+app.post("/api/channels", requireAuth, async (c) => {
+  const body = await c.req.json<{ slug?: unknown; title?: unknown; mode?: unknown }>().catch(() => ({}) as Record<string, unknown>);
+  const { slug, title, mode } = body;
+  if (!isName(slug)) return c.json({ error: "invalid slug" }, 400);
+  if (mode !== undefined && mode !== "normal" && mode !== "party") return c.json({ error: "mode must be normal|party" }, 400);
+  const row = {
+    slug,
+    title: typeof title === "string" && title.length > 0 && title.length <= 200 ? title : slug,
+    mode: (mode ?? "normal") as string,
+    guard_limit: null,
+    created_at: Date.now(),
+    archived_at: null,
+  };
+  try {
+    await c.env.DB.prepare("INSERT INTO channels (slug, title, mode, created_at) VALUES (?, ?, ?, ?)")
+      .bind(row.slug, row.title, row.mode, row.created_at)
+      .run();
+  } catch {
+    return c.json({ error: "slug already exists" }, 409);
+  }
+  return c.json(row, 201);
+});
+
+app.get("/api/channels", requireAuth, async (c) => {
+  const { results } = await c.env.DB.prepare(
+    "SELECT slug, title, mode, guard_limit, created_at FROM channels WHERE archived_at IS NULL ORDER BY created_at",
+  ).all();
+  return c.json({ channels: results });
+});
+
+app.post("/api/channels/:slug/archive", requireAuth, async (c) => {
+  const r = await c.env.DB.prepare("UPDATE channels SET archived_at = ? WHERE slug = ? AND archived_at IS NULL")
+    .bind(Date.now(), c.req.param("slug"))
+    .run();
+  if (r.meta.changes === 0) return c.json({ error: "channel not found" }, 404);
+  return c.json({ ok: true });
+});
+
+app.put("/api/channels/:slug/guard", requireAuth, async (c) => {
+  const body = await c.req.json<{ limit?: unknown }>().catch(() => ({}) as Record<string, unknown>);
+  const limit = body.limit;
+  const valid = limit === null || (Number.isInteger(limit) && (limit as number) >= 0 && (limit as number) <= 10_000);
+  if (!valid) return c.json({ error: "limit must be null or 0..10000" }, 400);
+  const r = await c.env.DB.prepare("UPDATE channels SET guard_limit = ? WHERE slug = ?")
+    .bind(limit, c.req.param("slug"))
+    .run();
+  if (r.meta.changes === 0) return c.json({ error: "channel not found" }, 404);
+  return c.json({ ok: true });
+});
+
 export { ChannelDO };
 export default { fetch: app.fetch } satisfies ExportedHandler<Env>;

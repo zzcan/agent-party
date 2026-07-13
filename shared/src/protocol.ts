@@ -59,6 +59,11 @@ export function isName(s: unknown): s is string {
   return typeof s === "string" && NAME_RE.test(s);
 }
 
+export function resolveGuardLimit(mode: ChannelMode, guard_limit: number | null): number {
+  if (guard_limit !== null) return guard_limit;
+  return mode === "party" ? LOOP_GUARD_PARTY_N : LOOP_GUARD_N;
+}
+
 export function extractMentions(body: string): string[] {
   const out = new Set<string>();
   for (const m of body.matchAll(/@([a-z0-9][a-z0-9-]{0,31})/g)) out.add(m[1]);
