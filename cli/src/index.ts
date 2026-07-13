@@ -4,6 +4,7 @@ import { init } from "./commands/init";
 import { send } from "./commands/send";
 import { status } from "./commands/status";
 import { tokenCmd } from "./commands/token";
+import { watch } from "./commands/watch";
 import { who } from "./commands/who";
 import { whoami } from "./commands/whoami";
 import { CliError } from "./errors";
@@ -52,6 +53,10 @@ export async function main(argv: string[]): Promise<number> {
     }
     if (cmd === "channel") {
       await channelCmd(rest);
+      return EXIT_OK;
+    }
+    if (cmd === "watch") {
+      await watch(rest);
       return EXIT_OK;
     }
     if (cmd === "who") {
