@@ -139,9 +139,23 @@ export class ChannelDO extends Server<Env> {
   async onRequest(request: Request): Promise<Response> {
     const url = new URL(request.url);
     if (request.method === "POST" && url.pathname === "/internal/config") {
-      const patch = (await request.json()) as { guard?: number; archived?: boolean };
-      if (patch.guard !== undefined) this.setMeta("guard", String(patch.guard));
-      if (patch.archived !== undefined) this.setMeta("archived", patch.archived ? "1" : "0");
+      let raw: unknown;
+      try {
+        raw = await request.json();
+      } catch {
+        return new Response("bad request", { status: 400 });
+      }
+      if (typeof raw !== "object" || raw === null) {
+        return new Response("bad request", { status: 400 });
+      }
+      const patch = raw as { guard?: unknown; archived?: unknown };
+      // 严格校验字段类型：非法 guard（如 NaN）绝不能静默关闭熔断
+      if (typeof patch.guard === "number" && Number.isFinite(patch.guard)) {
+        this.setMeta("guard", String(patch.guard));
+      }
+      if (typeof patch.archived === "boolean") {
+        this.setMeta("archived", patch.archived ? "1" : "0");
+      }
       return Response.json({ ok: true });
     }
     return new Response("not found", { status: 404 });

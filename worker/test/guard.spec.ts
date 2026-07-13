@@ -1,5 +1,6 @@
-import { SELF } from "cloudflare:test";
+import { env, runInDurableObject, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
+import type { ChannelDO } from "../src/do";
 import { mintToken } from "./tokens.spec";
 import { WsClient } from "./ws";
 
@@ -67,6 +68,47 @@ describe("loop guard", () => {
     // 连接保持打开时收紧 guard 到 1：streak 已是 1，下一条即触发
     await api("/api/channels/t9-poke/guard", agent, { method: "PUT", body: JSON.stringify({ limit: 1 }) });
     a.send({ type: "send", kind: "message", body: "blocked?", idem_key: "t9-pk2" });
+    await a.expect((f) => f.type === "error" && f.code === "loop_guard");
+    a.close();
+  });
+
+  it("/internal/config 加固：非法 body 返回 400 不抛异常，非法类型字段被忽略、不静默关闭熔断", async () => {
+    const slug = "t9-hardened";
+    const agent = await mintToken("t9-hardened-agent", "agent");
+    await api("/api/channels", agent, { method: "POST", body: JSON.stringify({ slug }) });
+    await api(`/api/channels/${slug}/guard`, agent, { method: "PUT", body: JSON.stringify({ limit: 2 }) });
+    const a = await WsClient.connect(slug, agent);
+    await a.expect((f) => f.type === "hello");
+
+    const stub = (env.CHANNELS as unknown as DurableObjectNamespace<ChannelDO>).get(env.CHANNELS.idFromName(slug));
+    await runInDurableObject(stub, async (instance) => {
+      // 非 JSON body 必须被 catch 住，返回 400 而不是把异常抛出 onRequest 之外
+      const malformed = await instance.onRequest(
+        new Request("https://do/internal/config", {
+          method: "POST",
+          headers: { "x-partykit-room": slug },
+          body: "not json",
+        }),
+      );
+      expect(malformed.status).toBe(400);
+
+      // guard 字段类型非法（字符串而非 number）必须被忽略，不能写入 NaN 从而静默关闭熔断
+      const invalidGuard = await instance.onRequest(
+        new Request("https://do/internal/config", {
+          method: "POST",
+          headers: { "x-partykit-room": slug, "content-type": "application/json" },
+          body: JSON.stringify({ guard: "abc" }),
+        }),
+      );
+      expect(invalidGuard.status).toBe(200);
+    });
+
+    // guard 仍是原先设置的 2：连发 2 条 agent 消息后第 3 条应仍旧触发熔断
+    a.send({ type: "send", kind: "message", body: "h1", idem_key: "t9-hard1" });
+    await a.expect((f) => f.type === "sent");
+    a.send({ type: "send", kind: "message", body: "h2", idem_key: "t9-hard2" });
+    await a.expect((f) => f.type === "sent");
+    a.send({ type: "send", kind: "message", body: "h3", idem_key: "t9-hard3" });
     await a.expect((f) => f.type === "error" && f.code === "loop_guard");
     a.close();
   });
