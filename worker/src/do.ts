@@ -2,6 +2,7 @@ import {
   extractMentions,
   IDEMPOTENCY_WINDOW_MS,
   LOOP_GUARD_N,
+  PRESENCE_TIMEOUT_MS,
   RATE_LIMIT_PER_MIN,
   RETAIN_N,
   type PresenceEntry,
@@ -22,6 +23,40 @@ export interface ConnState {
 export class ChannelDO extends Server<Env> {
   private get db() {
     return this.ctx.storage.sql;
+  }
+
+  // token 吊销即时生效：D1 查询 + 内存缓存，TTL 生产 60s、测试 0（AUTH_CACHE_TTL_MS 覆盖）
+  private tokenCache = new Map<string, { ok: boolean; at: number }>();
+
+  private async tokenActive(hash: string): Promise<boolean> {
+    const ttl = Number(this.env.AUTH_CACHE_TTL_MS ?? 60_000);
+    const cached = this.tokenCache.get(hash);
+    if (cached && Date.now() - cached.at < ttl) return cached.ok;
+    const row = await this.env.DB.prepare("SELECT 1 AS ok FROM tokens WHERE hash = ? AND revoked_at IS NULL")
+      .bind(hash)
+      .first();
+    const ok = row !== null;
+    this.tokenCache.set(hash, { ok, at: Date.now() });
+    return ok;
+  }
+
+  async onAlarm() {
+    const liveNames = new Set<string>();
+    for (const conn of this.getConnections<ConnState>()) {
+      if (conn.state?.name) liveNames.add(conn.state.name);
+    }
+    const ghosts = this.db
+      .exec("SELECT name FROM presence WHERE connected = 1")
+      .toArray()
+      .map((r) => String(r.name))
+      .filter((n) => !liveNames.has(n));
+    for (const name of ghosts) {
+      this.db.exec("UPDATE presence SET connected = 0 WHERE name = ?", name);
+      this.broadcastFrame({ type: "presence", entry: this.presenceEntry(name) });
+    }
+    if (liveNames.size > 0) {
+      await this.ctx.storage.setAlarm(Date.now() + PRESENCE_TIMEOUT_MS);
+    }
   }
 
   onStart() {
@@ -220,6 +255,11 @@ export class ChannelDO extends Server<Env> {
       for (const r of rows) this.sendFrame(connection, this.rowToMsg(r));
     }
     this.broadcastFrame({ type: "presence", entry: this.presenceEntry(state.name) });
+    // presence 超时扫描自排：只前移不后移，避免推迟已存在的更早闹钟
+    void this.ctx.storage.getAlarm().then((at) => {
+      const next = Date.now() + PRESENCE_TIMEOUT_MS;
+      if (at === null || at > next) void this.ctx.storage.setAlarm(next);
+    });
   }
 
   onClose(connection: Connection<ConnState>) {
@@ -239,6 +279,16 @@ export class ChannelDO extends Server<Env> {
     const parsed = parseSendFrame(typeof message === "string" ? message : "");
     if ("error" in parsed) {
       this.sendFrame(connection, { type: "error", code: "bad_frame", message: parsed.error });
+      return;
+    }
+    if (this.getMeta("archived") === "1") {
+      this.sendFrame(connection, { type: "error", code: "archived", message: "channel is archived" });
+      connection.close(1008, "archived");
+      return;
+    }
+    if (!(await this.tokenActive(state.hash))) {
+      this.sendFrame(connection, { type: "error", code: "auth", message: "token revoked" });
+      connection.close(1008, "auth");
       return;
     }
     const now = Date.now();

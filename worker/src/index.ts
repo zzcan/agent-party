@@ -114,6 +114,7 @@ app.post("/api/channels/:slug/archive", requireAuth, async (c) => {
     .bind(Date.now(), c.req.param("slug"))
     .run();
   if (r.meta.changes === 0) return c.json({ error: "channel not found" }, 404);
+  await pokeChannelConfig(c.env, c.req.param("slug"), { archived: true });
   return c.json({ ok: true });
 });
 
@@ -148,6 +149,7 @@ app.get("/api/channels/:slug/ws", async (c) => {
     .bind(slug)
     .first<{ slug: string; mode: ChannelMode; guard_limit: number | null; archived_at: number | null }>();
   if (!channel) return c.json({ error: "channel not found" }, 404);
+  if (channel.archived_at !== null) return c.json({ error: "channel is archived" }, 410);
   // 客户端注入的 x-ap-* 一律剥离，再写 worker 权威值（DO 无条件信任这些头）
   const fwd = new Request(c.req.raw);
   for (const h of AP_HEADERS) fwd.headers.delete(h);
