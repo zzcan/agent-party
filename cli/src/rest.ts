@@ -27,7 +27,7 @@ export async function restFetch(path: string, opts: RestOpts, fetchImpl: typeof 
   throw new CliError(EXIT_ERROR, `request failed: ${msg}`);
 }
 
-export const getMe = (o: RestOpts) => restFetch("/api/me", o);
+export const getMe = (o: RestOpts, f?: typeof fetch) => restFetch("/api/me", o, f);
 export const mintToken = (o: RestOpts, name: string, kind: "agent" | "human") =>
   restFetch("/api/tokens", { ...o, method: "POST", body: { name, kind } });
 export const revokeToken = (o: RestOpts, name: string) =>
