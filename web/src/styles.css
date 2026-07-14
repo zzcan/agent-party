@@ -1,0 +1,11 @@
+:root {
+  --c-waiting: #9ca3af;
+  --c-working: #3b82f6;
+  --c-blocked: #ef4444;
+  --c-done: #22c55e;
+  --c-offline: #4b5563;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+.shell { padding: 1rem; }

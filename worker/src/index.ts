@@ -7,6 +7,7 @@ export interface Env {
   DB: D1Database;
   CHANNELS: DurableObjectNamespace;
   ADMIN_SECRET: string;
+  ASSETS: Fetcher;
   // 测试用覆盖，生产不设
   RETAIN_N?: string;
   RATE_LIMIT_PER_MIN?: string;
@@ -219,6 +220,9 @@ app.get("/api/channels/:slug/ws", async (c) => {
   const stub = c.env.CHANNELS.get(c.env.CHANNELS.idFromName(slug));
   return stub.fetch(fwd);
 });
+
+// 非 /api 请求交给静态资产（SPA fallback 返回 index.html）
+app.all("*", (c) => c.env.ASSETS.fetch(c.req.raw));
 
 export { ChannelDO };
 export default { fetch: app.fetch } satisfies ExportedHandler<Env>;

@@ -15,5 +15,11 @@
       "database_id": "cba66648-c3ea-4582-8e36-c2842989df3f",
       "migrations_dir": "migrations"
     }
-  ]
+  ],
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  }
 }
