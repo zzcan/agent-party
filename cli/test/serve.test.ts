@@ -99,8 +99,9 @@ describe("serve 实时唤醒", () => {
     const s = startServe(m.url, `cp {file} ${out}; stat -f %p {file} > ${join(dir, "mode.txt")} || stat -c %a {file} > ${join(dir, "mode.txt")}`);
     await waitFor(() => m.received.some((f) => (f as { state?: string }).state === "waiting"));
     m.injectMsg({ sender: "alice", body: "@bot x", mentions: ["bot"] });
-    await waitFor(() => existsSync(out));
-    const mode = readFileSync(join(dir, "mode.txt"), "utf8").trim();
+    const modePath = join(dir, "mode.txt");
+    await waitFor(() => existsSync(out) && existsSync(modePath) && readFileSync(modePath, "utf8").trim().length > 0);
+    const mode = readFileSync(modePath, "utf8").trim();
     expect(mode.endsWith("600")).toBe(true);
     await s.ctl().stop();
     await s.done;
