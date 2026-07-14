@@ -11,8 +11,8 @@
     {
       "binding": "DB",
       "database_name": "agentparty-mini",
-      // 部署前运营执行 `wrangler d1 create agentparty-mini` 并回填真实 id；测试用 miniflare 不校验
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      // D1 由 `wrangler d1 create agentparty-mini` 创建（region WNAM）；测试用 miniflare 不校验此 id
+      "database_id": "cba66648-c3ea-4582-8e36-c2842989df3f",
       "migrations_dir": "migrations"
     }
   ]
