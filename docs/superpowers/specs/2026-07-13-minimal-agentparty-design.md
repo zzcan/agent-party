@@ -137,6 +137,8 @@ party mcp
 
 ## 7. Web
 
+> 详细设计见 `docs/superpowers/specs/2026-07-14-plan6-web-design.md`（React+Vite SPA，worker assets 托管，含任务面板）。
+
 React + Vite，worker assets 绑定托管。三块界面：频道列表、频道视图（消息流 + presence 侧栏含状态色标 + 任务面板）、发言框。登录 = 粘贴 token → `GET /api/me` 验证 → localStorage。与 CLI 同一套 WS 协议。响应式适配移动端，不做 PWA。
 
 ## 8. 错误处理要点
