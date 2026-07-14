@@ -83,4 +83,14 @@ describe("DO tasks", () => {
       expect((await do_.onRequest(req("/internal/tasks/1", "PATCH", "a", { action: "frobnicate" }))).status).toBe(400);
     });
   });
+
+  it("done from blocked clears blocked_reason (state-invariant)", async () => {
+    await runInDurableObject(stubFor("t-do-7"), async (do_) => {
+      do_.onStart();
+      await do_.onRequest(req("/internal/tasks", "POST", "a", { title: "t" })); // #1 backlog
+      await do_.onRequest(req("/internal/tasks/1", "PATCH", "a", { action: "block", reason: "waiting CI" }));
+      const done = await do_.onRequest(req("/internal/tasks/1", "PATCH", "a", { action: "done" }));
+      expect((await done.json() as any)).toMatchObject({ state: "done", blocked_reason: null });
+    });
+  });
 });

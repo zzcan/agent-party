@@ -524,7 +524,7 @@ export class ChannelDO extends Server<Env> {
       this.insertSystemMessage(`${name} 认领了 #${id}`, now);
     } else if (action === "done") {
       if (task.state === "done") return this.taskErr(400, "task already completed");
-      this.db.exec("UPDATE tasks SET state = 'done', updated_at = ? WHERE id = ?", now, id);
+      this.db.exec("UPDATE tasks SET state = 'done', blocked_reason = NULL, updated_at = ? WHERE id = ?", now, id);
       this.insertSystemMessage(`${name} 完成了 #${id}`, now);
     } else if (action === "block") {
       if (typeof reason !== "string" || reason.length === 0 || reason.length > 500) {
