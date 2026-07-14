@@ -1,0 +1,163 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { loadCursor, loadInflight, saveCursor, type Config } from "../src/config";
+import { serve, type ServeControl } from "../src/commands/serve";
+import { openChannel } from "../src/ws";
+import { startMockChannel } from "./mock-channel";
+
+let dir: string;
+let ctxDir: string;
+let stopMock: (() => void) | null = null;
+const orig = process.env.XDG_CONFIG_HOME;
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), "party-serve-test-"));
+  ctxDir = mkdtempSync(join(tmpdir(), "party-serve-ctx-"));
+  process.env.XDG_CONFIG_HOME = dir;
+});
+afterEach(() => {
+  orig === undefined ? delete process.env.XDG_CONFIG_HOME : (process.env.XDG_CONFIG_HOME = orig);
+  stopMock?.();
+  stopMock = null;
+  rmSync(dir, { recursive: true, force: true });
+  rmSync(ctxDir, { recursive: true, force: true });
+});
+
+function cfgFor(url: string): Config {
+  return { server: url, token: "ap_x", channel: "mock", name: "bot", kind: "agent" };
+}
+
+async function waitFor(cond: () => boolean, ms = 5000): Promise<void> {
+  const start = Date.now();
+  while (!cond()) {
+    if (Date.now() - start > ms) throw new Error("waitFor timeout");
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+
+/** 起 serve，返回 { done, ctl, errs }；测试注入 ctl.stop() 收尾。 */
+function startServe(url: string, cmd: string, extra: string[] = []) {
+  const errs: string[] = [];
+  let ctl!: ServeControl;
+  const done = serve(["--on-mention", cmd, ...extra], {
+    open: openChannel,
+    cfg: cfgFor(url),
+    contextDir: ctxDir,
+    err: (l) => errs.push(l),
+    onStart: (c) => {
+      ctl = c;
+    },
+  });
+  return { done, ctl: () => ctl, errs };
+}
+
+describe("serve 实时唤醒", () => {
+  test("被 @ → 命令执行一次，env 四件套 + context file 字段齐全，成功后游标推进、文件删除、waiting", async () => {
+    const m = startMockChannel({ self: "bot" });
+    stopMock = m.stop;
+    const log = join(dir, "wake.log");
+    const out = join(dir, "ctx.json");
+    const s = startServe(
+      m.url,
+      `cat "$PARTY_CONTEXT_FILE" > ${out}; echo "$PARTY_SEQ $PARTY_CHANNEL $PARTY_SENDER" >> ${log}`,
+    );
+    await waitFor(() => m.received.some((f) => (f as { state?: string }).state === "waiting"));
+    m.injectMsg({ sender: "carol", body: "chatter" }); // 闲聊：不唤醒，进 recent
+    const seq = m.injectMsg({ sender: "alice", body: "@bot go", mentions: ["bot"] });
+    await waitFor(() => existsSync(log));
+    expect(readFileSync(log, "utf8").trim()).toBe(`${seq} mock alice`);
+    const ctx = JSON.parse(readFileSync(out, "utf8"));
+    expect(ctx.seq).toBe(seq);
+    expect(ctx.sender).toBe("alice");
+    expect(ctx.body).toBe("@bot go");
+    expect(ctx.reply_to).toBe(seq);
+    expect(ctx.self).toBe("bot");
+    expect(ctx.recent.some((r: { body: string }) => r.body === "chatter")).toBe(true);
+    expect(ctx.recent.some((r: { seq: number }) => r.seq === seq)).toBe(false); // 触发消息不进 recent
+    await waitFor(() => loadCursor(m.url, "mock") === seq);
+    expect(loadInflight(m.url, "mock")).toBeNull();
+    await waitFor(() => readdirSync(ctxDir).length === 0); // 成功删 context file
+    // presence 节奏：waiting → working(handling seq=N) → waiting
+    const states = m.received
+      .filter((f): f is { state: string; note?: string } => (f as { kind?: string }).kind === "status")
+      .map((f) => f.state);
+    expect(states).toEqual(["waiting", "working", "waiting"]);
+    await s.ctl().stop();
+    await s.done;
+  });
+
+  test("{file} 占位符替换 + context file 权限 0600", async () => {
+    const m = startMockChannel({ self: "bot" });
+    stopMock = m.stop;
+    const out = join(dir, "via-placeholder.json");
+    const s = startServe(m.url, `cp {file} ${out}; stat -f %p {file} > ${join(dir, "mode.txt")} || stat -c %a {file} > ${join(dir, "mode.txt")}`);
+    await waitFor(() => m.received.some((f) => (f as { state?: string }).state === "waiting"));
+    m.injectMsg({ sender: "alice", body: "@bot x", mentions: ["bot"] });
+    await waitFor(() => existsSync(out));
+    const mode = readFileSync(join(dir, "mode.txt"), "utf8").trim();
+    expect(mode.endsWith("600")).toBe(true);
+    await s.ctl().stop();
+    await s.done;
+  });
+
+  test("命令非零退出：游标照样推进（消费）、context file 保留、发 blocked status、serve 不退", async () => {
+    const m = startMockChannel({ self: "bot" });
+    stopMock = m.stop;
+    const s = startServe(m.url, "exit 7");
+    await waitFor(() => m.received.some((f) => (f as { state?: string }).state === "waiting"));
+    const seq = m.injectMsg({ sender: "alice", body: "@bot x", mentions: ["bot"] });
+    await waitFor(() => loadCursor(m.url, "mock") === seq);
+    expect(loadInflight(m.url, "mock")).toBeNull(); // 消费掉了
+    expect(readdirSync(ctxDir)).toEqual([`${seq}.json`]); // 失败保留
+    expect(s.errs.some((l) => l.includes(`wake command failed (exit 7) for seq ${seq}`))).toBe(true);
+    const blocked = m.received.find((f) => (f as { state?: string }).state === "blocked") as { note?: string };
+    expect(blocked?.note).toBe(`wake command failed (exit 7) for seq ${seq}`);
+    // 还活着：再来一条照样唤醒
+    const seq2 = m.injectMsg({ sender: "alice", body: "@bot again", mentions: ["bot"] });
+    await waitFor(() => loadCursor(m.url, "mock") === seq2);
+    await s.ctl().stop();
+    await s.done;
+    expect(s.errs.some((l) => l.includes("kept failed wake contexts"))).toBe(true);
+  });
+
+  test("stop 杀死在飞命令：游标不推进、在飞标记残留（重启重放的欠账）", async () => {
+    const m = startMockChannel({ self: "bot" });
+    stopMock = m.stop;
+    const s = startServe(m.url, "sleep 30");
+    await waitFor(() => m.received.some((f) => (f as { state?: string }).state === "waiting"));
+    const seq = m.injectMsg({ sender: "alice", body: "@bot x", mentions: ["bot"] });
+    await waitFor(() => loadInflight(m.url, "mock") === seq); // 已开跑
+    await s.ctl().stop();
+    await s.done;
+    expect(loadCursor(m.url, "mock")).toBeLessThan(seq); // 未消费
+    expect(loadInflight(m.url, "mock")).toBe(seq); // 欠账留存
+  });
+
+  test("挂载跳过冷积压：游标跳 seq_high 并打印 skipped 行，不唤醒", async () => {
+    const m = startMockChannel({
+      self: "bot",
+      history: [
+        { seq: 1, sender: "a", body: "old1" },
+        { seq: 2, sender: "a", body: "@bot old-mention", mentions: ["bot"] },
+        { seq: 3, sender: "a", body: "old3" },
+      ],
+    });
+    stopMock = m.stop;
+    const log = join(dir, "wake.log");
+    const s = startServe(m.url, `echo woke >> ${log}`);
+    await waitFor(() => m.received.some((f) => (f as { state?: string }).state === "waiting"));
+    await waitFor(() => loadCursor(m.url, "mock") === 3);
+    expect(s.errs).toContain("skipped 3 messages up to seq 3");
+    await new Promise((r) => setTimeout(r, 100)); // 给错误的唤醒一个发生窗口
+    expect(existsSync(log)).toBe(false);
+    await s.ctl().stop();
+    await s.done;
+  });
+
+  test("缺 --on-mention → CliError(EXIT_ERROR)", async () => {
+    const m = startMockChannel({ self: "bot" });
+    stopMock = m.stop;
+    await expect(serve([], { cfg: cfgFor(m.url) })).rejects.toMatchObject({ code: 1 });
+  });
+});
