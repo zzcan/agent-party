@@ -41,8 +41,10 @@ export function openChannel(opts: OpenOpts): ChannelConn {
   let closedByCaller = false;
   let stopReconnect = false;
   let attempt = 0;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   const connect = () => {
+    if (closedByCaller || stopReconnect) return;
     ws = factory(wsUrl(opts.server, opts.slug, opts.token, after));
     ws.onopen = () => {
       attempt = 0;
@@ -62,7 +64,7 @@ export function openChannel(opts: OpenOpts): ChannelConn {
       if (closedByCaller || stopReconnect) return;
       const delay = delays[Math.min(attempt, delays.length - 1)];
       attempt++;
-      setTimeout(connect, delay);
+      reconnectTimer = setTimeout(connect, delay);
     };
   };
   connect();
@@ -71,6 +73,10 @@ export function openChannel(opts: OpenOpts): ChannelConn {
     send: (frame) => ws.send(JSON.stringify(frame)),
     close: () => {
       closedByCaller = true;
+      if (reconnectTimer !== null) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
       ws.close();
     },
   };

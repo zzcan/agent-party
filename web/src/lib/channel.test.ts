@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { ServerFrame } from "@agentparty-mini/shared";
 import { openChannel, wsUrl } from "./channel";
 
@@ -58,5 +58,17 @@ describe("openChannel", () => {
     await new Promise((r) => setTimeout(r, 10));
     expect(FakeWS.instances).toHaveLength(2);
     expect(FakeWS.instances[1].url).toContain("after=4");
+  });
+
+  it("caller close() after a drop cancels the pending reconnect", async () => {
+    FakeWS.instances = [];
+    const conn = openChannel({ server: "http://h", token: "t", slug: "c", after: 0, onFrame: () => {}, reconnectDelaysMs: [20], wsFactory: (u) => new FakeWS(u) as any });
+    const ws = FakeWS.instances[0];
+    ws.onopen?.();
+    ws.emit({ type: "hello", channel: "c", self: "me", seq_high: 0, mode: "normal", guard: 30, presence: [] });
+    ws.onclose?.();        // non-terminal drop → schedules reconnect (delay 20ms)
+    conn.close();          // caller tears down before the timer fires
+    await new Promise((r) => setTimeout(r, 40));
+    expect(FakeWS.instances).toHaveLength(1);  // no reconnect happened
   });
 });
