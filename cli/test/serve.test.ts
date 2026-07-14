@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadCursor, loadInflight, saveCursor, saveInflight, type Config } from "../src/config";
 import { serve, type ServeControl } from "../src/commands/serve";
+import { acquireLock } from "../src/lock";
 import { openChannel } from "../src/ws";
 import { startMockChannel } from "./mock-channel";
 
@@ -270,5 +271,29 @@ describe("serve FIFO 与连接生命周期", () => {
     await waitFor(() => m.received.some((f) => (f as { state?: string }).state === "waiting"));
     m.injectFrame({ type: "error", code: "archived", message: "channel archived" });
     await expect(s.done).rejects.toMatchObject({ code: 5 });
+  });
+});
+
+describe("serve 单实例锁", () => {
+  test("锁被活进程持有 → serve 立即抛 EXIT_ALREADY_SERVING", async () => {
+    const m = startMockChannel({ self: "bot" });
+    stopMock = m.stop;
+    const release = acquireLock(m.url, "mock"); // 模拟已有 serve（本进程 pid，必然存活）
+    try {
+      await expect(serve(["--on-mention", "true"], { cfg: cfgFor(m.url) })).rejects.toMatchObject({ code: 10 });
+    } finally {
+      release();
+    }
+  });
+
+  test("serve 正常结束后锁释放，可再次获取", async () => {
+    const m = startMockChannel({ self: "bot" });
+    stopMock = m.stop;
+    const s = startServe(m.url, "true");
+    await waitFor(() => m.received.some((f) => (f as { state?: string }).state === "waiting"));
+    await s.ctl().stop();
+    await s.done;
+    const release = acquireLock(m.url, "mock"); // 锁已释放才拿得到
+    release();
   });
 });

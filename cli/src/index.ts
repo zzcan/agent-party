@@ -2,6 +2,7 @@ import { EXIT_ERROR, EXIT_OK } from "@agentparty-mini/shared";
 import { channelCmd } from "./commands/channel";
 import { init } from "./commands/init";
 import { send } from "./commands/send";
+import { serve } from "./commands/serve";
 import { status } from "./commands/status";
 import { tokenCmd } from "./commands/token";
 import { watch } from "./commands/watch";
@@ -16,6 +17,7 @@ usage:
   party init --server URL --token TOKEN --channel SLUG
   party send <text> [--mention NAME]... [--reply-to SEQ] [--channel SLUG]
   party watch [--mentions-only] [--once] [--follow] [--json] [--channel SLUG]
+  party serve --on-mention '<cmd>' [--channel SLUG]
   party who [--json] [--channel SLUG]
   party status <working|waiting|blocked|done> [note] [--channel SLUG]
   party whoami
@@ -57,6 +59,10 @@ export async function main(argv: string[]): Promise<number> {
     }
     if (cmd === "watch") {
       await watch(rest);
+      return EXIT_OK;
+    }
+    if (cmd === "serve") {
+      await serve(rest);
       return EXIT_OK;
     }
     if (cmd === "who") {

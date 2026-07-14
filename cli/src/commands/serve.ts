@@ -17,6 +17,7 @@ import {
   type Config,
 } from "../config";
 import { CliError } from "../errors";
+import { acquireLock } from "../lock";
 import { exitCodeFor, openChannel as defaultOpen } from "../ws";
 
 export type MsgFrame = Extract<ServerFrame, { type: "msg" }>;
@@ -93,6 +94,7 @@ export async function serve(argv: string[], deps: ServeDeps = {}): Promise<void>
   const server = (flags.server as string | undefined) ?? cfg.server;
   const token = (flags.token as string | undefined) ?? cfg.token;
   const err = deps.err ?? ((l: string) => process.stderr.write(`${l}\n`));
+  const releaseLock = acquireLock(cfg.server, channel);
   const contextDir = deps.contextDir ?? mkdtempSync(join(tmpdir(), "party-serve-"));
 
   const st = {
@@ -100,6 +102,19 @@ export async function serve(argv: string[], deps: ServeDeps = {}): Promise<void>
     child: null as ReturnType<typeof Bun.spawn> | null,
     ch: null as Awaited<ReturnType<typeof defaultOpen>> | null,
   };
+
+  let signal: NodeJS.Signals | null = null;
+  const onSigint = () => {
+    signal = "SIGINT";
+    void stop();
+  };
+  const onSigterm = () => {
+    signal = "SIGTERM";
+    void stop();
+  };
+  process.once("SIGINT", onSigint);
+  process.once("SIGTERM", onSigterm);
+
   const recent: MsgFrame[] = [];
   const recentPush = (f: MsgFrame) => {
     recent.push(f);
@@ -225,6 +240,9 @@ export async function serve(argv: string[], deps: ServeDeps = {}): Promise<void>
       recentPush(f);
     }
   } finally {
+    process.off("SIGINT", onSigint);
+    process.off("SIGTERM", onSigterm);
+    releaseLock();
     // context 目录：无残留则删；有失败残留则保留并报路径
     try {
       if (readdirSync(contextDir).length === 0) rmSync(contextDir, { recursive: true, force: true });
@@ -233,4 +251,5 @@ export async function serve(argv: string[], deps: ServeDeps = {}): Promise<void>
       /* 目录可能已不存在 */
     }
   }
+  if (signal !== null) process.exit(signal === "SIGINT" ? 130 : 143);
 }

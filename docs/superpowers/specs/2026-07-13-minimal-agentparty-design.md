@@ -117,6 +117,8 @@ party mcp
 
 ### 唤醒链路（serve）
 
+> 详细设计见 `docs/superpowers/specs/2026-07-14-plan3-serve-design.md`。其中对本节的修正：`EXIT_LOOP_GUARD=4` 属于 `party send`，serve 不以它退出（serve 只发 status 帧，收不到 loop_guard，且 guard 是人类发言即清的暂时态）。
+
 - 常驻进程，WS 自动重连；被 @ 时把触发消息 + 近期频道上下文写入临时文件，路径经 `$PARTY_CONTEXT_FILE` 传给命令（典型：`claude -p "$PARTY_CONTEXT_FILE"`），**串行执行**。命令内部用 `party send --reply-to $PARTY_SEQ` 回复。
 - **游标持久化**：处理完才推进本地游标文件；崩溃重启不丢 mention、配合服务端幂等不重复应答。
 - **实例锁**：同一身份+频道文件锁单实例，防双开。
