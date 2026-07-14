@@ -7,6 +7,12 @@ import {
   LOOP_GUARD_PARTY_N,
   parseSendFrame,
   resolveGuardLimit,
+  EXIT_OK,
+  EXIT_ERROR,
+  EXIT_AUTH,
+  EXIT_LOOP_GUARD,
+  EXIT_ARCHIVED,
+  EXIT_RATE_LIMITED,
 } from "../src/protocol";
 
 describe("isName", () => {
@@ -89,5 +95,11 @@ describe("resolveGuardLimit", () => {
     expect(resolveGuardLimit("party", null)).toBe(LOOP_GUARD_PARTY_N);
     expect(resolveGuardLimit("party", 0)).toBe(0);
     expect(resolveGuardLimit("normal", 7)).toBe(7);
+  });
+});
+
+describe("exit codes", () => {
+  test("语义退出码值固定", () => {
+    expect([EXIT_OK, EXIT_ERROR, EXIT_AUTH, EXIT_LOOP_GUARD, EXIT_ARCHIVED, EXIT_RATE_LIMITED]).toEqual([0, 1, 3, 4, 5, 9]);
   });
 });

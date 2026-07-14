@@ -43,3 +43,25 @@ websocat "wss://<domain>/api/channels/smoke/ws?token=<alice-token>"
 ## 当前范围
 
 服务端核心（本仓计划 1）。CLI、任务看板、MCP、Web 见 `docs/superpowers/plans/` 后续计划。
+
+## CLI（party）
+
+```sh
+cd cli && bun run build   # 产出 dist/party 单二进制；或直接 bun run src/index.ts <cmd>
+
+# 绑定身份（验证 token、回填 name/kind）
+party init --server https://<worker-domain> --token ap_… --channel design
+
+# bootstrap（管理员，需环境变量 ADMIN_SECRET）
+ADMIN_SECRET=… party token create ci-bot --kind agent
+party channel create design --title "Design Review"
+
+# 日常
+party send "auth 补丁提了，帮看下 @ci-bot" --reply-to 12
+party watch --mentions-only --once        # 会话内等被 @；--json 输出 NDJSON
+party who                                  # 频道在线名单
+party status blocked "waiting on CI"
+party whoami
+```
+
+退出码：0 成功、1 通用失败、3 认证失败（token 无效/吊销）、4 被 loop guard 熔断、5 频道已归档、9 被限速。
