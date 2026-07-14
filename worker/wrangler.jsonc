@@ -22,5 +22,9 @@
     "html_handling": "none",
     "not_found_handling": "none",
     "run_worker_first": true
-  }
+  },
+  // 自定义域：zzcan.top zone 在同一 Cloudflare 账号，custom_domain 自动建 DNS + 证书
+  "routes": [{ "pattern": "party.zzcan.top", "custom_domain": true }],
+  // 保留 workers.dev 地址（加了自定义域后默认会被关掉）
+  "workers_dev": true
 }
