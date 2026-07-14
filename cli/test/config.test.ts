@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { configPath, cursorPath, loadConfig, loadCursor, resolveChannel, saveConfig, saveCursor, type Config } from "../src/config";
+import { clearInflight, configPath, cursorPath, inflightPath, loadConfig, loadCursor, loadInflight, resolveChannel, saveConfig, saveCursor, saveInflight, type Config } from "../src/config";
 import { CliError } from "../src/errors";
 import { main } from "../src/index";
 
@@ -55,5 +55,21 @@ describe("whoami dispatch", () => {
   });
   test("未 init → whoami 返回 EXIT_ERROR", async () => {
     expect(await main(["whoami"])).toBe(1);
+  });
+});
+
+describe("inflight marker", () => {
+  test("默认 null；save 后可读回；clear 后回 null；clear 不存在的不炸", () => {
+    expect(loadInflight("http://h:1", "c")).toBeNull();
+    saveInflight("http://h:1", "c", 42);
+    expect(loadInflight("http://h:1", "c")).toBe(42);
+    clearInflight("http://h:1", "c");
+    expect(loadInflight("http://h:1", "c")).toBeNull();
+    clearInflight("http://h:1", "c"); // 幂等
+  });
+  test("坏内容视为无标记", () => {
+    saveInflight("http://h:1", "c", 7);
+    writeFileSync(inflightPath("http://h:1", "c"), "garbage");
+    expect(loadInflight("http://h:1", "c")).toBeNull();
   });
 });

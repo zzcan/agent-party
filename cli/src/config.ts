@@ -1,5 +1,5 @@
 import { EXIT_ERROR } from "@agentparty-mini/shared";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { CliError } from "./errors";
@@ -36,7 +36,7 @@ export function resolveChannel(cfg: Config, override?: string): string {
   return override && override.length > 0 ? override : cfg.channel;
 }
 
-function hostOf(server: string): string {
+export function hostOf(server: string): string {
   try {
     return new URL(server).host;
   } catch {
@@ -58,4 +58,28 @@ export function loadCursor(server: string, channel: string): number {
 export function saveCursor(server: string, channel: string, seq: number): void {
   mkdirSync(join(configDir(), "cursors"), { recursive: true });
   writeFileSync(cursorPath(server, channel), String(seq));
+}
+
+export function inflightPath(server: string, channel: string): string {
+  return join(configDir(), "inflight", `${hostOf(server)}__${channel}.seq`);
+}
+
+export function loadInflight(server: string, channel: string): number | null {
+  const p = inflightPath(server, channel);
+  if (!existsSync(p)) return null;
+  const n = Number(readFileSync(p, "utf8").trim());
+  return Number.isInteger(n) && n >= 1 ? n : null;
+}
+
+export function saveInflight(server: string, channel: string, seq: number): void {
+  mkdirSync(join(configDir(), "inflight"), { recursive: true });
+  writeFileSync(inflightPath(server, channel), String(seq));
+}
+
+export function clearInflight(server: string, channel: string): void {
+  try {
+    unlinkSync(inflightPath(server, channel));
+  } catch {
+    /* 不存在即目标态 */
+  }
 }

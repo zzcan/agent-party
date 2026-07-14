@@ -130,4 +130,21 @@ describe("openChannel", () => {
     expect(ok).toBe(true);
     ch.close();
   });
+
+  test("onReconnect 在重连成功后调用，首连不调用", async () => {
+    const m = startMockChannel({ self: "me", dropFirstConnection: true });
+    stopFn = m.stop;
+    let reconnects = 0;
+    const ch = await openChannel({ server: m.url, token: "t" }, "mock", {
+      after: 0,
+      reconnect: true,
+      reconnectDelaysMs: [10],
+      onReconnect: () => reconnects++,
+    });
+    expect(reconnects).toBe(0); // 首连拿到 hello 时不算重连
+    // 等待掉线→重连完成
+    await new Promise((r) => setTimeout(r, 200));
+    expect(reconnects).toBe(1);
+    ch.close();
+  });
 });

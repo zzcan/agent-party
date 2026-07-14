@@ -13,6 +13,7 @@ import {
   EXIT_LOOP_GUARD,
   EXIT_ARCHIVED,
   EXIT_RATE_LIMITED,
+  EXIT_ALREADY_SERVING,
 } from "../src/protocol";
 
 describe("isName", () => {
@@ -100,6 +101,6 @@ describe("resolveGuardLimit", () => {
 
 describe("exit codes", () => {
   test("语义退出码值固定", () => {
-    expect([EXIT_OK, EXIT_ERROR, EXIT_AUTH, EXIT_LOOP_GUARD, EXIT_ARCHIVED, EXIT_RATE_LIMITED]).toEqual([0, 1, 3, 4, 5, 9]);
+    expect([EXIT_OK, EXIT_ERROR, EXIT_AUTH, EXIT_LOOP_GUARD, EXIT_ARCHIVED, EXIT_RATE_LIMITED, EXIT_ALREADY_SERVING]).toEqual([0, 1, 3, 4, 5, 9, 10]);
   });
 });

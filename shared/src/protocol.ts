@@ -77,6 +77,7 @@ export const EXIT_AUTH = 3;
 export const EXIT_LOOP_GUARD = 4;
 export const EXIT_ARCHIVED = 5;
 export const EXIT_RATE_LIMITED = 9;
+export const EXIT_ALREADY_SERVING = 10;
 
 const STATUS_STATES: readonly string[] = ["working", "waiting", "blocked", "done"];
 
