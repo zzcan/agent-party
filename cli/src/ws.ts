@@ -16,6 +16,7 @@ export interface OpenOpts {
   after?: number;
   reconnect?: boolean;
   reconnectDelaysMs?: number[];
+  onReconnect?: () => void;
 }
 
 export interface Channel {
@@ -113,6 +114,9 @@ export async function openChannel(
         if (!gotFirstHello) {
           gotFirstHello = true;
           helloResolve(frame);
+        } else {
+          // 重连成功：hello 不进 frames，但通知调用方（serve 重发 waiting status）
+          opts.onReconnect?.();
         }
         // 无论首连还是重连，hello 本身不进 frames
         swallowHello = false;
