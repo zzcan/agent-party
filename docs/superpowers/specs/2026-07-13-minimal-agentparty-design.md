@@ -131,6 +131,8 @@ party mcp
 
 ## 6. 任务看板（最小面）
 
+> 详细设计见 `docs/superpowers/specs/2026-07-14-plan4-tasks-design.md`（worker DO + REST + CLI 实现）。
+
 状态机四态：`backlog → in_progress → done`，外加 `blocked(reason)`。每次任务变更同时向频道插一条 system 消息（如 "bob 认领了 #3"），围观者无需轮询。砍掉：triage/needs_review 态、squad 指派、外部引用、验收流。
 
 ## 7. Web
