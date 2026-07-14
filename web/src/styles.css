@@ -40,3 +40,14 @@ body { margin: 0; }
 .dot.blocked { background: var(--c-blocked); } .dot.done { background: var(--c-done); } .dot.offline { background: var(--c-offline); }
 .presence .note { color: #6b7280; font-size: 0.8rem; }
 @media (max-width: 640px) { .channel-view { grid-template-columns: 1fr; } .side { display: none; } }
+
+.tasks form { display: flex; gap: 0.4rem; margin-bottom: 0.5rem; }
+.tasks form input { flex: 1; }
+.task { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; padding: 0.3rem 0; border-bottom: 1px solid #f3f4f6; font-size: 0.85rem; }
+.task .tid { color: #6b7280; }
+.badge { padding: 0 0.35rem; border-radius: 999px; color: #fff; font-size: 0.7rem; }
+.badge.backlog { background: #9ca3af; } .badge.in_progress { background: var(--c-working); }
+.badge.blocked { background: var(--c-blocked); } .badge.done { background: var(--c-done); }
+.task .title { flex: 1 1 100%; }
+.task .reason { color: #6b7280; }
+.task .actions button { font-size: 0.7rem; padding: 0.1rem 0.4rem; margin-left: 0.2rem; }
