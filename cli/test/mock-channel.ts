@@ -27,7 +27,10 @@ export function startMockChannel(opts: MockOpts) {
       open(ws) {
         connectionCount++;
         const url = new URL((ws.data as { url: string }).url);
-        const after = Number(url.searchParams.get("after") ?? 0);
+        // 对齐真实服务端语义：缺 after 参数 = 不补拉（用 null 标记）。绝不能默认成 0，
+        // 否则 mock 会对「无 after」补拉全部，与真服务端相反，让协议 bug 被单测掩盖。
+        const afterParam = url.searchParams.get("after");
+        const after = afterParam === null ? null : Number(afterParam);
         if (opts.connectError) {
           ws.send(JSON.stringify({ type: "error", ...opts.connectError }));
           ws.close(1008, opts.connectError.code);
@@ -44,7 +47,7 @@ export function startMockChannel(opts: MockOpts) {
         };
         ws.send(JSON.stringify(hello));
         for (const h of opts.history ?? []) {
-          if (h.seq > after) {
+          if (after !== null && h.seq > after) {
             ws.send(
               JSON.stringify({
                 type: "msg",

@@ -1,8 +1,17 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { openChannel } from "../src/ws";
+import { openChannel, toWsUrl } from "../src/ws";
 import { startMockChannel } from "./mock-channel";
 import { CliError } from "../src/errors";
 import { EXIT_ARCHIVED } from "@agentparty-mini/shared";
+
+describe("toWsUrl", () => {
+  test("http→ws，after 有定义就带上（含 0），undefined 时省略", () => {
+    // 全新观察者游标为 0：必须带 after=0，否则服务端「缺 after=不补拉」会吞掉全部历史
+    expect(toWsUrl("http://h", "c", "ap_t", 0)).toBe("ws://h/api/channels/c/ws?token=ap_t&after=0");
+    expect(toWsUrl("https://h", "c", "ap_t", 5)).toBe("wss://h/api/channels/c/ws?token=ap_t&after=5");
+    expect(toWsUrl("http://h", "c", "ap_t")).toBe("ws://h/api/channels/c/ws?token=ap_t");
+  });
+});
 
 let stopFn: (() => void) | null = null;
 afterEach(() => {
@@ -18,6 +27,41 @@ describe("openChannel", () => {
     expect(ch.hello.self).toBe("alice");
     expect(ch.hello.presence[0].name).toBe("alice");
     ch.close();
+  });
+
+  test("after=0 全新观察者补拉全部历史（缺 after 参数则不补拉，对齐真服务端）", async () => {
+    const history = [
+      { seq: 1, sender: "x", body: "one" },
+      { seq: 2, sender: "y", body: "two" },
+    ];
+    // 传 after:0 → toWsUrl 带 after=0 → mock 补拉 seq>0
+    const withCursor = startMockChannel({ self: "z", history });
+    stopFn = withCursor.stop;
+    const ch0 = await openChannel({ server: withCursor.url, token: "ap_z" }, "mock", { after: 0 });
+    const seqs: number[] = [];
+    for await (const f of ch0.frames) {
+      if (f.type === "msg") {
+        seqs.push(f.seq);
+        if (seqs.length === 2) break;
+      }
+    }
+    expect(seqs).toEqual([1, 2]);
+    ch0.close();
+    withCursor.stop();
+    stopFn = null;
+
+    // 不传 after（who/status/send 的路径）→ 省略参数 → mock 不补拉
+    const noCursor = startMockChannel({ self: "z", history });
+    stopFn = noCursor.stop;
+    const ch1 = await openChannel({ server: noCursor.url, token: "ap_z" }, "mock");
+    let sawMsg = false;
+    ch1.send({ type: "send", kind: "message", body: "live", idem_key: "k-live" });
+    for await (const f of ch1.frames) {
+      if (f.type === "sent") break; // 收到自己的 sent 说明连接正常，且此前没有历史 msg 涌入
+      if (f.type === "msg") sawMsg = true;
+    }
+    expect(sawMsg).toBe(false);
+    ch1.close();
   });
 
   test("send message → 收到自己的 sent{idem_key}", async () => {

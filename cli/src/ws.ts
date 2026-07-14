@@ -30,7 +30,10 @@ const DEFAULT_DELAYS = [1000, 2000, 4000, 8000, 16000, 30000];
 export function toWsUrl(server: string, channel: string, token: string, after?: number): string {
   const base = server.replace(/^http/, "ws");
   const q = new URLSearchParams({ token });
-  if (after !== undefined && after > 0) q.set("after", String(after));
+  // 只要 after 有定义就带上（含 0）：服务端对「缺 after 参数」的语义是「不补拉」，
+  // 所以省略 after=0 会让全新观察者（游标 0）收不到任何历史。watch 总是传 after（新连为 0），
+  // who/status/send 不传 after（undefined）→ 省略 → 服务端不补拉，正是它们要的。
+  if (after !== undefined) q.set("after", String(after));
   return `${base}/api/channels/${channel}/ws?${q.toString()}`;
 }
 
@@ -88,7 +91,9 @@ export async function openChannel(
   const queue = new FrameQueue();
   const delays = opts.reconnectDelaysMs ?? DEFAULT_DELAYS;
   let ws: WebSocket;
-  let lastSeq = opts.after ?? 0;
+  // 首连用 opts.after 原样（undefined → 不带 after → 服务端不补拉，who/status/send 要的正是这个；
+  // watch 传 after=游标含 0 → 带 after → 补拉）。收到 msg 后更新为其 seq，重连据此续拉。
+  let lastSeq: number | undefined = opts.after;
   let closedByCaller = false;
   let gotFirstHello = false;
   let swallowHello = false; // 重连后的 hello 不入队
