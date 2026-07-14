@@ -221,8 +221,14 @@ app.get("/api/channels/:slug/ws", async (c) => {
   return stub.fetch(fwd);
 });
 
-// 非 /api 请求交给静态资产（SPA fallback 返回 index.html）
-app.all("*", (c) => c.env.ASSETS.fetch(c.req.raw));
+// 非 /api 请求交给静态资产；资产缺失时回退 index.html（SPA 客户端路由）。
+// html_handling=none 让 /index.html 直出不重定向，SPA 回退才拿得到它。
+app.all("*", async (c) => {
+  const asset = await c.env.ASSETS.fetch(c.req.raw);
+  if (asset.status !== 404) return asset;
+  const indexUrl = new URL("/index.html", c.req.url);
+  return c.env.ASSETS.fetch(new Request(indexUrl, c.req.raw));
+});
 
 export { ChannelDO };
 export default { fetch: app.fetch } satisfies ExportedHandler<Env>;
