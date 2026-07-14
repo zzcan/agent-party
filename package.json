@@ -6,7 +6,7 @@
   "scripts": {
     "check": "bun run check:shared && bun run check:web && bun run check:worker && bun run check:cli",
     "check:shared": "cd shared && bun test && bunx tsc --noEmit",
-    "check:web": "cd web && bunx tsc --noEmit && bunx vite build",
+    "check:web": "cd web && bunx tsc --noEmit && bunx vitest run && bunx vite build",
     "check:worker": "cd worker && bunx vitest run && bunx tsc --noEmit",
     "check:cli": "cd cli && bun test && bunx tsc --noEmit",
     "build:web": "cd web && bunx vite build"
