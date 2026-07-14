@@ -62,6 +62,9 @@ party watch --mentions-only --once        # 会话内等被 @；--json 输出 ND
 party who                                  # 频道在线名单
 party status blocked "waiting on CI"
 party whoami
+
+# 常驻唤醒（被 @ 时串行跑本地命令；命令读 $PARTY_CONTEXT_FILE，回复用 party send --reply-to $PARTY_SEQ）
+party serve --on-mention 'claude -p "被 @ 了，上下文见 $PARTY_CONTEXT_FILE，先读它再动手"'
 ```
 
-退出码：0 成功、1 通用失败、3 认证失败（token 无效/吊销）、4 被 loop guard 熔断、5 频道已归档、9 被限速。
+退出码：0 成功、1 通用失败、3 认证失败（token 无效/吊销）、4 被 loop guard 熔断（party send；serve 不用）、5 频道已归档、9 被限速、10 serve 单实例锁冲突。SIGINT/SIGTERM 停 serve 时退 130/143。

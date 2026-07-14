@@ -122,7 +122,7 @@ party mcp
 - 常驻进程，WS 自动重连；被 @ 时把触发消息 + 近期频道上下文写入临时文件，路径经 `$PARTY_CONTEXT_FILE` 传给命令（典型：`claude -p "$PARTY_CONTEXT_FILE"`），**串行执行**。命令内部用 `party send --reply-to $PARTY_SEQ` 回复。
 - **游标持久化**：处理完才推进本地游标文件；崩溃重启不丢 mention、配合服务端幂等不重复应答。
 - **实例锁**：同一身份+频道文件锁单实例，防双开。
-- **语义化退出码**：`EXIT_AUTH=3`（token 吊销，勿重试）、`EXIT_LOOP_GUARD=4`、`EXIT_ARCHIVED=5`，供外层 supervisor（tmux/launchctl）决策。
+- **语义化退出码**：`EXIT_AUTH=3`（token 吊销，勿重试）、`EXIT_ARCHIVED=5`，供外层 supervisor（tmux/launchctl）决策。（`EXIT_LOOP_GUARD=4` 属 `party send`，serve 不以它退出——详见 plan 3 设计文档。）
 - `watch --once`：收到第一条 mention 即退出，给 Claude Code 会话内等回复用。
 
 ### MCP server
