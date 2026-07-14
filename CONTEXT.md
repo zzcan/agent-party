@@ -21,3 +21,12 @@
 - **单实例锁 (instance lock)**：防止同一 (server, channel) 双开 serve 互踩游标的本机文件锁。
 - **终局错误 (terminal error)**：不可能靠重连恢复的服务端错误（token 吊销、频道归档），serve 据此退出并以语义退出码告知外层 supervisor。
 - **外层 supervisor (outer supervisor)**：负责保活 serve 进程的外部机制（tmux/launchctl 等），依据 serve 的语义退出码决定是否重启。
+
+## 任务看板领域
+
+- **任务 (task)**：频道内的一条看板条目，有每频道自增的 `#id`、标题、状态、认领人。与消息 (message) 是两套独立的编号（seq vs id）。
+- **状态 (state)**：任务的四态之一——backlog（待办）、in_progress（进行中）、blocked（阻塞）、done（完成，终态）。
+- **认领 (claim)**：把一条任务的认领人 (assignee) 设为调用者并转入 in_progress。允许抢单——认领别人正在做的任务会改派，且透明地播一条通告。
+- **阻塞 (blocked)**：任务因某原因 (blocked_reason) 暂时无法推进的状态；再次认领即解除。
+- **认领人 / 创建人 (assignee / created_by)**：任务当前负责人、以及最初创建者，均取 token 身份名。
+- **任务通告 (task announcement)**：每次任务变更，DO 复用 system 消息机制往频道播一条人类可读通告（如「alice 认领了 #3」），让围观者无需轮询即可感知——观察者据此重取任务列表。
