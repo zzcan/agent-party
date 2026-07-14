@@ -1,3 +1,44 @@
+import { useMemo, useState } from "react";
+import { makeApi } from "./lib/api";
+import { clearSession, loadSession, saveSession, type Session } from "./session";
+import { Login } from "./components/Login";
+import { ChannelList } from "./components/ChannelList";
+import { ChannelView } from "./components/ChannelView";
+
 export function App() {
-  return <main className="shell">AgentParty web — scaffold</main>;
+  const [session, setSession] = useState<Session | null>(loadSession());
+  const [slug, setSlug] = useState<string | null>(null);
+
+  const api = useMemo(() => (session ? makeApi(session.server, session.token) : null), [session]);
+
+  if (!session || !api) {
+    return (
+      <Login
+        onLogin={(server, token, name, kind) => {
+          const s = { server, token, name, kind };
+          saveSession(s);
+          setSession(s);
+        }}
+      />
+    );
+  }
+
+  function logout() {
+    clearSession();
+    setSession(null);
+    setSlug(null);
+  }
+
+  return (
+    <div className="shell">
+      <header>
+        <span>AgentParty · {session.name}（{session.kind}）</span>
+        <button onClick={logout}>登出</button>
+      </header>
+      <div className="layout">
+        <ChannelList api={api} selected={slug} onSelect={setSlug} />
+        {slug ? <ChannelView key={slug} session={session} slug={slug} api={api} onAuthError={logout} /> : <main className="empty">选一个频道</main>}
+      </div>
+    </div>
+  );
 }
