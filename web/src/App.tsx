@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { makeApi } from "./lib/api";
 import { clearSession, loadSession, saveSession, type Session } from "./session";
 import { Login } from "./components/Login";
@@ -9,7 +9,13 @@ export function App() {
   const [session, setSession] = useState<Session | null>(loadSession());
   const [slug, setSlug] = useState<string | null>(null);
 
-  const api = useMemo(() => (session ? makeApi(session.server, session.token) : null), [session]);
+  const logout = useCallback(() => {
+    clearSession();
+    setSession(null);
+    setSlug(null);
+  }, []);
+
+  const api = useMemo(() => (session ? makeApi(session.server, session.token, logout) : null), [session, logout]);
 
   if (!session || !api) {
     return (
@@ -21,12 +27,6 @@ export function App() {
         }}
       />
     );
-  }
-
-  function logout() {
-    clearSession();
-    setSession(null);
-    setSlug(null);
   }
 
   return (

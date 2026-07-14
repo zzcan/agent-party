@@ -22,31 +22,59 @@ export interface ChannelInfo {
   mode: string;
 }
 
-async function req(server: string, token: string, path: string, init: RequestInit = {}): Promise<any> {
+async function req(
+  server: string,
+  token: string,
+  path: string,
+  init: RequestInit = {},
+  onAuthError?: () => void,
+): Promise<any> {
   const res = await fetch(`${server}${path}`, {
     ...init,
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...(init.headers ?? {}) },
   });
   const text = await res.text();
   const body = text ? JSON.parse(text) : {};
-  if (!res.ok) throw new ApiError(res.status, body?.error ?? `HTTP ${res.status}`);
+  if (!res.ok) {
+    if (res.status === 401) onAuthError?.();
+    throw new ApiError(res.status, body?.error ?? `HTTP ${res.status}`);
+  }
   return body;
 }
 
-export function makeApi(server: string, token: string) {
+export function makeApi(server: string, token: string, onAuthError?: () => void) {
   return {
-    getMe: () => req(server, token, "/api/me") as Promise<{ name: string; kind: "agent" | "human" }>,
-    listChannels: () => req(server, token, "/api/channels") as Promise<{ channels: ChannelInfo[] }>,
+    getMe: () => req(server, token, "/api/me", {}, onAuthError) as Promise<{ name: string; kind: "agent" | "human" }>,
+    listChannels: () => req(server, token, "/api/channels", {}, onAuthError) as Promise<{ channels: ChannelInfo[] }>,
     createChannel: (slug: string, title?: string) =>
-      req(server, token, "/api/channels", { method: "POST", body: JSON.stringify({ slug, ...(title ? { title } : {}) }) }),
-    listTasks: (slug: string) => req(server, token, `/api/channels/${slug}/tasks`) as Promise<{ tasks: Task[] }>,
+      req(
+        server,
+        token,
+        "/api/channels",
+        { method: "POST", body: JSON.stringify({ slug, ...(title ? { title } : {}) }) },
+        onAuthError,
+      ),
+    listTasks: (slug: string) =>
+      req(server, token, `/api/channels/${slug}/tasks`, {}, onAuthError) as Promise<{ tasks: Task[] }>,
     createTask: (slug: string, title: string) =>
-      req(server, token, `/api/channels/${slug}/tasks`, { method: "POST", body: JSON.stringify({ title }) }) as Promise<Task>,
+      req(
+        server,
+        token,
+        `/api/channels/${slug}/tasks`,
+        { method: "POST", body: JSON.stringify({ title }) },
+        onAuthError,
+      ) as Promise<Task>,
     updateTask: (slug: string, id: number, action: "claim" | "done" | "block", reason?: string) =>
-      req(server, token, `/api/channels/${slug}/tasks/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ action, ...(reason !== undefined ? { reason } : {}) }),
-      }) as Promise<Task>,
+      req(
+        server,
+        token,
+        `/api/channels/${slug}/tasks/${id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ action, ...(reason !== undefined ? { reason } : {}) }),
+        },
+        onAuthError,
+      ) as Promise<Task>,
   };
 }
 
