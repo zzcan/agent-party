@@ -4,6 +4,7 @@ import { init } from "./commands/init";
 import { send } from "./commands/send";
 import { serve } from "./commands/serve";
 import { status } from "./commands/status";
+import { taskCmd } from "./commands/task";
 import { tokenCmd } from "./commands/token";
 import { watch } from "./commands/watch";
 import { who } from "./commands/who";
@@ -27,6 +28,7 @@ usage:
   party channel list
   party channel archive <slug>
   party channel guard <slug> <n|off|default>
+  party task create <title> | list | claim <id> | done <id> | block <id> <reason>
 
 flags: --server URL  --token TOKEN  override the bound config per-command`;
 
@@ -75,6 +77,10 @@ export async function main(argv: string[]): Promise<number> {
     }
     if (cmd === "send") {
       await send(rest);
+      return EXIT_OK;
+    }
+    if (cmd === "task") {
+      await taskCmd(rest);
       return EXIT_OK;
     }
     // 命令表在后续任务逐个填充

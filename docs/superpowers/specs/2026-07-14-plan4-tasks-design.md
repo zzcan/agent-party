@@ -58,7 +58,7 @@ backlog / in_progress / blocked ──done──▶ done            (终态)
 | （create） | — | backlog | `created_by`=身份，`assignee`=NULL |
 | claim | backlog / blocked / in_progress | in_progress | `assignee`=身份；`blocked_reason`=NULL |
 | block | backlog / in_progress | blocked | `blocked_reason`=reason |
-| done | backlog / in_progress / blocked | done | — |
+| done | backlog / in_progress / blocked | done | 清 blocked_reason（维持 §3 不变量） |
 
 - **done 终态**：无 reopen；误关只能新建。
 - **claim 抢单**：claim 别人的 in_progress 任务会改派 assignee，透明地播一条通告。

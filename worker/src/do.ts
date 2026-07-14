@@ -20,6 +20,18 @@ export interface ConnState {
   hash: string;
 }
 
+type TaskState = "backlog" | "in_progress" | "blocked" | "done";
+interface TaskObj {
+  id: number;
+  title: string;
+  state: TaskState;
+  assignee: string | null;
+  created_by: string;
+  blocked_reason: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
 export class ChannelDO extends Server<Env> {
   private get db() {
     return this.ctx.storage.sql;
@@ -92,6 +104,16 @@ export class ChannelDO extends Server<Env> {
     this.db.exec(
       `CREATE TABLE IF NOT EXISTS rate (name TEXT PRIMARY KEY, window_start INTEGER NOT NULL, count INTEGER NOT NULL)`,
     );
+    this.db.exec(`CREATE TABLE IF NOT EXISTS tasks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      state TEXT NOT NULL DEFAULT 'backlog',
+      assignee TEXT,
+      created_by TEXT NOT NULL,
+      blocked_reason TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`);
   }
 
   protected getMeta(key: string): string | null {
@@ -201,6 +223,15 @@ export class ChannelDO extends Server<Env> {
         this.setMeta("archived", patch.archived ? "1" : "0");
       }
       return Response.json({ ok: true });
+    }
+    if (url.pathname === "/internal/tasks") {
+      if (request.method === "POST") return this.taskCreate(request);
+      if (request.method === "GET") return this.taskList();
+      return new Response("method not allowed", { status: 405 });
+    }
+    const taskMatch = url.pathname.match(/^\/internal\/tasks\/(\d+)$/);
+    if (taskMatch && request.method === "PATCH") {
+      return this.taskPatch(Number(taskMatch[1]), request);
     }
     return new Response("not found", { status: 404 });
   }
@@ -403,5 +434,115 @@ export class ChannelDO extends Server<Env> {
     } else {
       this.setMeta("agent_streak", String(Number(this.getMeta("agent_streak") ?? "0") + 1));
     }
+  }
+
+  private taskErr(status: number, message: string): Response {
+    return Response.json({ error: message }, { status });
+  }
+
+  private rowToTask(r: Record<string, unknown>): TaskObj {
+    return {
+      id: Number(r.id),
+      title: String(r.title),
+      state: String(r.state) as TaskState,
+      assignee: r.assignee === null ? null : String(r.assignee),
+      created_by: String(r.created_by),
+      blocked_reason: r.blocked_reason === null ? null : String(r.blocked_reason),
+      created_at: Number(r.created_at),
+      updated_at: Number(r.updated_at),
+    };
+  }
+
+  private getTask(id: number): TaskObj | null {
+    const r = this.db
+      .exec(
+        "SELECT id, title, state, assignee, created_by, blocked_reason, created_at, updated_at FROM tasks WHERE id = ?",
+        id,
+      )
+      .toArray()[0];
+    return r ? this.rowToTask(r) : null;
+  }
+
+  private taskList(): Response {
+    const rows = this.db
+      .exec(
+        "SELECT id, title, state, assignee, created_by, blocked_reason, created_at, updated_at FROM tasks ORDER BY id",
+      )
+      .toArray();
+    return Response.json({ tasks: rows.map((r) => this.rowToTask(r)) });
+  }
+
+  private async taskCreate(request: Request): Promise<Response> {
+    const name = request.headers.get("x-ap-name") ?? "";
+    let raw: unknown;
+    try {
+      raw = await request.json();
+    } catch {
+      return this.taskErr(400, "invalid json");
+    }
+    const title = (raw as { title?: unknown })?.title;
+    if (typeof title !== "string" || title.length === 0 || title.length > 200) {
+      return this.taskErr(400, "title required, 1..200 chars");
+    }
+    const now = Date.now();
+    const id = Number(
+      this.db
+        .exec(
+          `INSERT INTO tasks (title, state, assignee, created_by, blocked_reason, created_at, updated_at)
+           VALUES (?, 'backlog', NULL, ?, NULL, ?, ?) RETURNING id`,
+          title,
+          name,
+          now,
+          now,
+        )
+        .toArray()[0].id,
+    );
+    this.insertSystemMessage(`${name} 创建了 #${id}：${title}`, now);
+    return Response.json(this.getTask(id), { status: 201 });
+  }
+
+  private async taskPatch(id: number, request: Request): Promise<Response> {
+    const name = request.headers.get("x-ap-name") ?? "";
+    let raw: unknown;
+    try {
+      raw = await request.json();
+    } catch {
+      return this.taskErr(400, "invalid json");
+    }
+    const { action, reason } = (raw ?? {}) as { action?: unknown; reason?: unknown };
+    const task = this.getTask(id);
+    if (!task) return this.taskErr(404, `task #${id} not found`);
+    const now = Date.now();
+    if (action === "claim") {
+      if (task.state === "done") return this.taskErr(400, "cannot claim a completed task");
+      this.db.exec(
+        "UPDATE tasks SET state = 'in_progress', assignee = ?, blocked_reason = NULL, updated_at = ? WHERE id = ?",
+        name,
+        now,
+        id,
+      );
+      this.insertSystemMessage(`${name} 认领了 #${id}`, now);
+    } else if (action === "done") {
+      if (task.state === "done") return this.taskErr(400, "task already completed");
+      this.db.exec("UPDATE tasks SET state = 'done', blocked_reason = NULL, updated_at = ? WHERE id = ?", now, id);
+      this.insertSystemMessage(`${name} 完成了 #${id}`, now);
+    } else if (action === "block") {
+      if (typeof reason !== "string" || reason.length === 0 || reason.length > 500) {
+        return this.taskErr(400, "reason required, 1..500 chars");
+      }
+      if (task.state !== "backlog" && task.state !== "in_progress") {
+        return this.taskErr(400, `cannot block a ${task.state} task`);
+      }
+      this.db.exec(
+        "UPDATE tasks SET state = 'blocked', blocked_reason = ?, updated_at = ? WHERE id = ?",
+        reason,
+        now,
+        id,
+      );
+      this.insertSystemMessage(`${name} 阻塞了 #${id}：${reason}`, now);
+    } else {
+      return this.taskErr(400, "action must be claim|done|block");
+    }
+    return Response.json(this.getTask(id));
   }
 }

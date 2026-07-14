@@ -39,3 +39,20 @@ export const archiveChannel = (o: RestOpts, slug: string, f?: typeof fetch) =>
   restFetch(`/api/channels/${slug}/archive`, { ...o, method: "POST" }, f);
 export const setGuard = (o: RestOpts, slug: string, limit: number | null, f?: typeof fetch) =>
   restFetch(`/api/channels/${slug}/guard`, { ...o, method: "PUT", body: { limit } }, f);
+export const createTask = (o: RestOpts, slug: string, title: string, f?: typeof fetch) =>
+  restFetch(`/api/channels/${slug}/tasks`, { ...o, method: "POST", body: { title } }, f);
+export const listTasks = (o: RestOpts, slug: string, f?: typeof fetch) =>
+  restFetch(`/api/channels/${slug}/tasks`, o, f);
+export const updateTask = (
+  o: RestOpts,
+  slug: string,
+  id: number,
+  action: "claim" | "done" | "block",
+  reason?: string,
+  f?: typeof fetch,
+) =>
+  restFetch(
+    `/api/channels/${slug}/tasks/${id}`,
+    { ...o, method: "PATCH", body: { action, ...(reason !== undefined ? { reason } : {}) } },
+    f,
+  );
