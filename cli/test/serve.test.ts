@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadCursor, loadInflight, saveCursor, type Config } from "../src/config";
+import { loadCursor, loadInflight, saveCursor, saveInflight, type Config } from "../src/config";
 import { serve, type ServeControl } from "../src/commands/serve";
 import { openChannel } from "../src/ws";
 import { startMockChannel } from "./mock-channel";
@@ -159,5 +159,116 @@ describe("serve 实时唤醒", () => {
     const m = startMockChannel({ self: "bot" });
     stopMock = m.stop;
     await expect(serve([], { cfg: cfgFor(m.url) })).rejects.toMatchObject({ code: 1 });
+  });
+});
+
+describe("serve 积压与欠账", () => {
+  test("跳过的积压里有 @自己 → 每条打 warning 行", async () => {
+    const m = startMockChannel({
+      self: "bot",
+      history: [
+        { seq: 1, sender: "a", body: "@bot one", mentions: ["bot"] },
+        { seq: 2, sender: "a", body: "plain" },
+        { seq: 3, sender: "a", body: "@bot three", mentions: ["bot"] },
+      ],
+    });
+    stopMock = m.stop;
+    const s = startServe(m.url, "true");
+    await waitFor(() => s.errs.filter((l) => l.startsWith("warning: skipped mention")).length === 2);
+    expect(s.errs).toContain("warning: skipped mention of you at seq 1");
+    expect(s.errs).toContain("warning: skipped mention of you at seq 3");
+    await s.ctl().stop();
+    await s.done;
+  });
+
+  test("在飞标记指向的那条恰好重放一次，其余积压照跳", async () => {
+    const m = startMockChannel({
+      self: "bot",
+      history: [
+        { seq: 1, sender: "a", body: "@bot one", mentions: ["bot"] },
+        { seq: 2, sender: "a", body: "@bot two", mentions: ["bot"] },
+        { seq: 3, sender: "a", body: "@bot three", mentions: ["bot"] },
+      ],
+    });
+    stopMock = m.stop;
+    saveInflight(m.url, "mock", 2); // 上次崩在 seq 2 在飞
+    const log = join(dir, "wake.log");
+    const s = startServe(m.url, `echo "$PARTY_SEQ" >> ${log}`);
+    await waitFor(() => existsSync(log));
+    await waitFor(() => loadInflight(m.url, "mock") === null); // 重放完成、标记清除
+    expect(readFileSync(log, "utf8").trim()).toBe("2"); // 只重放 seq 2
+    await s.ctl().stop();
+    await s.done;
+  });
+
+  test("在飞标记指向已修剪消息（补拉第一条已越过它）→ 警告 + 清标记，不唤醒", async () => {
+    const m = startMockChannel({
+      self: "bot",
+      history: [{ seq: 5, sender: "a", body: "later" }],
+    });
+    stopMock = m.stop;
+    saveInflight(m.url, "mock", 2); // 2 已被修剪出保留窗口
+    const log = join(dir, "wake.log");
+    const s = startServe(m.url, `echo woke >> ${log}`);
+    await waitFor(() => loadInflight(m.url, "mock") === null);
+    expect(s.errs).toContain("warning: in-flight seq 2 was pruned; dropping");
+    expect(existsSync(log)).toBe(false);
+    await s.ctl().stop();
+    await s.done;
+  });
+});
+
+describe("serve FIFO 与连接生命周期", () => {
+  test("忙时连发 3 条 @ → 严格串行、按序执行", async () => {
+    const m = startMockChannel({ self: "bot" });
+    stopMock = m.stop;
+    const log = join(dir, "fifo.log");
+    const s = startServe(m.url, `echo "start-$PARTY_SEQ" >> ${log}; sleep 0.15; echo "end-$PARTY_SEQ" >> ${log}`);
+    await waitFor(() => m.received.some((f) => (f as { state?: string }).state === "waiting"));
+    const s1 = m.injectMsg({ sender: "a", body: "@bot 1", mentions: ["bot"] });
+    const s2 = m.injectMsg({ sender: "b", body: "@bot 2", mentions: ["bot"] });
+    const s3 = m.injectMsg({ sender: "c", body: "@bot 3", mentions: ["bot"] });
+    await waitFor(() => existsSync(log) && readFileSync(log, "utf8").trim().split("\n").length === 6, 10_000);
+    expect(readFileSync(log, "utf8").trim().split("\n")).toEqual([
+      `start-${s1}`, `end-${s1}`,
+      `start-${s2}`, `end-${s2}`,
+      `start-${s3}`, `end-${s3}`,
+    ]);
+    await s.ctl().stop();
+    await s.done;
+  });
+
+  test("断线重连后重发 waiting status", async () => {
+    const m = startMockChannel({ self: "bot", dropFirstConnection: true });
+    stopMock = m.stop;
+    const s = startServe(m.url, "true");
+    await waitFor(
+      () =>
+        m.received.filter(
+          (f) => (f as { state?: string; note?: string }).state === "waiting" &&
+            (f as { note?: string }).note === "serve attached; mention me to wake",
+        ).length >= 2,
+      10_000,
+    );
+    await s.ctl().stop();
+    await s.done;
+  });
+
+  test("终局 error{auth} → serve 抛 CliError(EXIT_AUTH)", async () => {
+    const m = startMockChannel({ self: "bot" });
+    stopMock = m.stop;
+    const s = startServe(m.url, "true");
+    await waitFor(() => m.received.some((f) => (f as { state?: string }).state === "waiting"));
+    m.injectFrame({ type: "error", code: "auth", message: "token revoked" });
+    await expect(s.done).rejects.toMatchObject({ code: 3 });
+  });
+
+  test("终局 error{archived} → serve 抛 CliError(EXIT_ARCHIVED)", async () => {
+    const m = startMockChannel({ self: "bot" });
+    stopMock = m.stop;
+    const s = startServe(m.url, "true");
+    await waitFor(() => m.received.some((f) => (f as { state?: string }).state === "waiting"));
+    m.injectFrame({ type: "error", code: "archived", message: "channel archived" });
+    await expect(s.done).rejects.toMatchObject({ code: 5 });
   });
 });

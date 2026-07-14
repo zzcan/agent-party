@@ -10,6 +10,7 @@ import {
   clearInflight,
   loadConfig,
   loadCursor,
+  loadInflight,
   resolveChannel,
   saveCursor,
   saveInflight,
@@ -183,6 +184,7 @@ export async function serve(argv: string[], deps: ServeDeps = {}): Promise<void>
     self = ch.hello.self;
     const seqHigh = ch.hello.seq_high;
     const cursor0 = loadCursor(cfg.server, channel);
+    let inflightPending = loadInflight(cfg.server, channel);
     sendStatus("waiting", "serve attached; mention me to wake");
     if (seqHigh > cursor0) {
       err(`skipped ${seqHigh - cursor0} messages up to seq ${seqHigh}`);
@@ -196,7 +198,28 @@ export async function serve(argv: string[], deps: ServeDeps = {}): Promise<void>
         continue;
       }
       if (f.type !== "msg") continue;
-      if (f.seq > seqHigh && shouldWake(f, self)) {
+      // 在飞欠账：标记指向的那条恰好重放；补拉第一条已越过它 = 被修剪，响亮放弃
+      if (inflightPending !== null) {
+        if (f.seq === inflightPending) {
+          inflightPending = null;
+          if (shouldWake(f, self)) {
+            await runWake(f);
+          } else {
+            clearInflight(cfg.server, channel);
+          }
+          recentPush(f);
+          continue;
+        }
+        if (f.seq > inflightPending) {
+          err(`warning: in-flight seq ${inflightPending} was pruned; dropping`);
+          clearInflight(cfg.server, channel);
+          inflightPending = null;
+        }
+      }
+      if (f.seq <= seqHigh) {
+        // 冷积压：不唤醒，但 @自己 的要让人看见
+        if (shouldWake(f, self)) err(`warning: skipped mention of you at seq ${f.seq}`);
+      } else if (shouldWake(f, self)) {
         await runWake(f);
       }
       recentPush(f);
