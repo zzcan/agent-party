@@ -46,6 +46,33 @@ export async function pokeChannelConfig(
   });
 }
 
+async function lookupChannel(env: Env, slug: string): Promise<{ slug: string; archived_at: number | null } | null> {
+  return env.DB.prepare("SELECT slug, archived_at FROM channels WHERE slug = ?")
+    .bind(slug)
+    .first<{ slug: string; archived_at: number | null }>();
+}
+
+function forwardToChannel(
+  env: Env,
+  slug: string,
+  method: string,
+  internalPath: string,
+  identity: Identity,
+  body?: string,
+): Promise<Response> {
+  const stub = env.CHANNELS.get(env.CHANNELS.idFromName(slug));
+  return stub.fetch(`https://do${internalPath}`, {
+    method,
+    headers: {
+      "x-partykit-room": slug,
+      "x-ap-name": identity.name,
+      "x-ap-kind": identity.kind,
+      "content-type": "application/json",
+    },
+    ...(body !== undefined ? { body } : {}),
+  });
+}
+
 app.get("/api/health", (c) => c.json({ ok: true }));
 
 app.post("/api/tokens", requireAdmin, async (c) => {
@@ -134,6 +161,33 @@ app.put("/api/channels/:slug/guard", requireAuth, async (c) => {
     .first<{ mode: ChannelMode; guard_limit: number | null }>();
   if (ch) await pokeChannelConfig(c.env, c.req.param("slug"), { guard: resolveGuardLimit(ch.mode, ch.guard_limit) });
   return c.json({ ok: true });
+});
+
+app.post("/api/channels/:slug/tasks", requireAuth, async (c) => {
+  const slug = c.req.param("slug");
+  const ch = await lookupChannel(c.env, slug);
+  if (!ch) return c.json({ error: "channel not found" }, 404);
+  if (ch.archived_at !== null) return c.json({ error: "channel is archived" }, 410);
+  const body = await c.req.text();
+  return forwardToChannel(c.env, slug, "POST", "/internal/tasks", c.get("identity"), body);
+});
+
+app.get("/api/channels/:slug/tasks", requireAuth, async (c) => {
+  const slug = c.req.param("slug");
+  const ch = await lookupChannel(c.env, slug);
+  if (!ch) return c.json({ error: "channel not found" }, 404);
+  return forwardToChannel(c.env, slug, "GET", "/internal/tasks", c.get("identity"));
+});
+
+app.patch("/api/channels/:slug/tasks/:id", requireAuth, async (c) => {
+  const slug = c.req.param("slug");
+  const idStr = c.req.param("id");
+  if (!/^\d+$/.test(idStr)) return c.json({ error: "invalid task id" }, 404);
+  const ch = await lookupChannel(c.env, slug);
+  if (!ch) return c.json({ error: "channel not found" }, 404);
+  if (ch.archived_at !== null) return c.json({ error: "channel is archived" }, 410);
+  const body = await c.req.text();
+  return forwardToChannel(c.env, slug, "PATCH", `/internal/tasks/${idStr}`, c.get("identity"), body);
 });
 
 const AP_HEADERS = ["x-ap-name", "x-ap-kind", "x-ap-hash", "x-ap-mode", "x-ap-guard", "x-ap-archived"];
