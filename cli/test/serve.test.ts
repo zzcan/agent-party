@@ -80,10 +80,14 @@ describe("serve 实时唤醒", () => {
     expect(loadInflight(m.url, "mock")).toBeNull();
     await waitFor(() => readdirSync(ctxDir).length === 0); // 成功删 context file
     // presence 节奏：waiting → working(handling seq=N) → waiting
-    const states = m.received
-      .filter((f): f is { state: string; note?: string } => (f as { kind?: string }).kind === "status")
-      .map((f) => f.state);
-    expect(states).toEqual(["waiting", "working", "waiting"]);
+    // 最后一条 waiting 是 unlink 之后 fire-and-forget 发出的，未必已被 mock 收到；
+    // 先等三条 status 帧都到齐，再断言顺序，避免在高负载下偶发失败。
+    const statusStates = () =>
+      m.received
+        .filter((f): f is { kind: string; state: string } => (f as { kind?: string }).kind === "status")
+        .map((f) => f.state);
+    await waitFor(() => statusStates().length === 3);
+    expect(statusStates()).toEqual(["waiting", "working", "waiting"]);
     await s.ctl().stop();
     await s.done;
   });
@@ -214,6 +218,26 @@ describe("serve 积压与欠账", () => {
     await waitFor(() => loadInflight(m.url, "mock") === null);
     expect(s.errs).toContain("warning: in-flight seq 2 was pruned; dropping");
     expect(existsSync(log)).toBe(false);
+    await s.ctl().stop();
+    await s.done;
+  });
+
+  test("在飞标记被修剪 + 同一帧本身是实时 @ → 既告警又照常唤醒该帧", async () => {
+    const m = startMockChannel({
+      self: "bot",
+      history: [{ seq: 3, sender: "a", body: "old" }], // 撑高 seq_high=3、seqCounter=3
+    });
+    stopMock = m.stop;
+    saveCursor(m.url, "mock", 3); // 游标已越过历史那条，attach 时不会重放它，实时消息就是第一帧
+    saveInflight(m.url, "mock", 1); // 在飞标记指向早已作废的 seq 1（< 后面实时消息的 seq 4）
+    const log = join(dir, "wake.log");
+    const s = startServe(m.url, `echo "$PARTY_SEQ" >> ${log}`);
+    await waitFor(() => m.received.some((f) => (f as { state?: string }).state === "waiting"));
+    const seq = m.injectMsg({ sender: "alice", body: "@bot live", mentions: ["bot"] }); // seq=4 > seq_high=3
+    await waitFor(() => existsSync(log));
+    expect(readFileSync(log, "utf8").trim()).toBe(String(seq)); // 照常唤醒该帧
+    expect(s.errs).toContain("warning: in-flight seq 1 was pruned; dropping");
+    await waitFor(() => loadInflight(m.url, "mock") === null);
     await s.ctl().stop();
     await s.done;
   });

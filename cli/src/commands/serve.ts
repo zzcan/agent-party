@@ -94,7 +94,8 @@ export async function serve(argv: string[], deps: ServeDeps = {}): Promise<void>
   const server = (flags.server as string | undefined) ?? cfg.server;
   const token = (flags.token as string | undefined) ?? cfg.token;
   const err = deps.err ?? ((l: string) => process.stderr.write(`${l}\n`));
-  const releaseLock = acquireLock(cfg.server, channel);
+  // 用解析后的 server（含 --server 覆盖）给游标/在飞/锁键，避免连一个 server 却读另一个的游标
+  const releaseLock = acquireLock(server, channel);
   const contextDir = deps.contextDir ?? mkdtempSync(join(tmpdir(), "party-serve-"));
 
   const st = {
@@ -146,7 +147,7 @@ export async function serve(argv: string[], deps: ServeDeps = {}): Promise<void>
   let self = cfg.name;
 
   const runWake = async (f: MsgFrame): Promise<void> => {
-    saveInflight(cfg.server, channel, f.seq);
+    saveInflight(server, channel, f.seq);
     sendStatus("working", `handling seq=${f.seq}`);
     const ctxPath = join(contextDir, `${f.seq}.json`);
     writeFileSync(ctxPath, `${JSON.stringify(buildWakeContext(f, self, channel, recent), null, 2)}\n`, {
@@ -170,8 +171,8 @@ export async function serve(argv: string[], deps: ServeDeps = {}): Promise<void>
     st.child = null;
     // 被 stop 杀掉 ≠ 命令自己返回：不消费，游标与在飞标记原样留给重启重放
     if (st.stopping) return;
-    if (f.seq > loadCursor(cfg.server, channel)) saveCursor(cfg.server, channel, f.seq);
-    clearInflight(cfg.server, channel);
+    if (f.seq > loadCursor(server, channel)) saveCursor(server, channel, f.seq);
+    clearInflight(server, channel);
     if (code === 0) {
       try {
         unlinkSync(ctxPath);
@@ -190,7 +191,7 @@ export async function serve(argv: string[], deps: ServeDeps = {}): Promise<void>
       { server, token },
       channel,
       {
-        after: loadCursor(cfg.server, channel),
+        after: loadCursor(server, channel),
         reconnect: true,
         onReconnect: () => sendStatus("waiting", "serve attached; mention me to wake"),
       },
@@ -198,12 +199,12 @@ export async function serve(argv: string[], deps: ServeDeps = {}): Promise<void>
     st.ch = ch;
     self = ch.hello.self;
     const seqHigh = ch.hello.seq_high;
-    const cursor0 = loadCursor(cfg.server, channel);
-    let inflightPending = loadInflight(cfg.server, channel);
+    const cursor0 = loadCursor(server, channel);
+    let inflightPending = loadInflight(server, channel);
     sendStatus("waiting", "serve attached; mention me to wake");
     if (seqHigh > cursor0) {
       err(`skipped ${seqHigh - cursor0} messages up to seq ${seqHigh}`);
-      saveCursor(cfg.server, channel, seqHigh);
+      saveCursor(server, channel, seqHigh);
     }
     for await (const f of ch.frames) {
       if (st.stopping) break;
@@ -220,14 +221,14 @@ export async function serve(argv: string[], deps: ServeDeps = {}): Promise<void>
           if (shouldWake(f, self)) {
             await runWake(f);
           } else {
-            clearInflight(cfg.server, channel);
+            clearInflight(server, channel);
           }
           recentPush(f);
           continue;
         }
         if (f.seq > inflightPending) {
           err(`warning: in-flight seq ${inflightPending} was pruned; dropping`);
-          clearInflight(cfg.server, channel);
+          clearInflight(server, channel);
           inflightPending = null;
         }
       }
