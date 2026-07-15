@@ -4,7 +4,8 @@
   "type": "module",
   "workspaces": ["shared", "worker", "cli", "web"],
   "scripts": {
-    "check": "bun run check:shared && bun run check:web && bun run check:worker && bun run check:cli",
+    "check": "bun run check:install && bun run check:shared && bun run check:web && bun run check:worker && bun run check:cli",
+    "check:install": "sh test/install.test.sh",
     "check:shared": "cd shared && bun test && bunx tsc --noEmit",
     "check:web": "cd web && bunx tsc --noEmit && bunx vitest run && bunx vite build",
     "check:worker": "cd worker && bunx vitest run && bunx tsc --noEmit",
