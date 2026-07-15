@@ -3,6 +3,7 @@
 set -u
 fail=0
 PARTY_INSTALL_LIB=1 . ./install.sh
+set +e +u  # install.sh set -eu; reset so bare failing calls produce FAIL lines, not aborts
 
 check() { # desc expected actual
   if [ "$2" = "$3" ]; then

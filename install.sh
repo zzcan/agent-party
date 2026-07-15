@@ -39,6 +39,7 @@ pick_sha() { # prints the sha-256 command, or return 1
 }
 
 verify_checksum() { # file sumsfile
+  SHACMD="${SHACMD:-$(pick_sha)}"
   name=$(basename "$1")
   expected=$(grep "  ${name}\$" "$2" | awk '{print $1}' | head -n1)
   [ -n "$expected" ] || return 1
