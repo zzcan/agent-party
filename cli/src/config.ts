@@ -83,3 +83,19 @@ export function clearInflight(server: string, channel: string): void {
     /* 不存在即目标态 */
   }
 }
+
+export function mcpCursorPath(server: string, channel: string): string {
+  return join(configDir(), "cursors-mcp", `${hostOf(server)}__${channel}.seq`);
+}
+
+export function loadMcpCursor(server: string, channel: string): number {
+  const p = mcpCursorPath(server, channel);
+  if (!existsSync(p)) return 0;
+  const n = Number(readFileSync(p, "utf8").trim());
+  return Number.isInteger(n) && n >= 0 ? n : 0;
+}
+
+export function saveMcpCursor(server: string, channel: string, seq: number): void {
+  mkdirSync(join(configDir(), "cursors-mcp"), { recursive: true });
+  writeFileSync(mcpCursorPath(server, channel), String(seq));
+}
