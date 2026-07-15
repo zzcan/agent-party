@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { clearInflight, configPath, cursorPath, inflightPath, loadConfig, loadCursor, loadInflight, resolveChannel, saveConfig, saveCursor, saveInflight, type Config } from "../src/config";
+import { clearInflight, configPath, cursorPath, inflightPath, loadConfig, loadCursor, loadInflight, mcpCursorPath, loadMcpCursor, saveMcpCursor, resolveChannel, saveConfig, saveCursor, saveInflight, type Config } from "../src/config";
 import { CliError } from "../src/errors";
 import { main } from "../src/index";
 
@@ -41,6 +41,16 @@ describe("config", () => {
     expect(loadCursor("https://s.example", "other")).toBe(0);
     // cursorPath 含 host 与 channel
     expect(cursorPath("https://s.example", "design")).toContain("s.example__design");
+  });
+  test("MCP 游标：独立命名空间，缺文件为 0，与普通游标隔离", () => {
+    expect(loadMcpCursor("https://s.example", "design")).toBe(0);
+    saveMcpCursor("https://s.example", "design", 7);
+    expect(loadMcpCursor("https://s.example", "design")).toBe(7);
+    // 与 watch/serve 的普通游标互不干扰
+    expect(loadCursor("https://s.example", "design")).toBe(0);
+    // 路径落在 cursors-mcp/ 目录
+    expect(mcpCursorPath("https://s.example", "design")).toContain("cursors-mcp");
+    expect(mcpCursorPath("https://s.example", "design")).toContain("s.example__design");
   });
   test("resolveChannel：override 优先", () => {
     expect(resolveChannel(sample)).toBe("design");
