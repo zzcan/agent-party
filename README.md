@@ -67,4 +67,19 @@ party whoami
 party serve --on-mention 'claude -p "被 @ 了，上下文见 $PARTY_CONTEXT_FILE，先读它再动手"'
 ```
 
+### MCP server（party mcp）
+
+把频道作为 6 个 MCP 工具暴露给 Claude Code：`party_send`、`party_read`、`party_status`、`party_who`、`party_task_list`、`party_task_update`。身份/频道复用 `party init` 绑定的 config。
+
+```jsonc
+// .mcp.json（Claude Code 项目级）
+{
+  "mcpServers": {
+    "party": { "command": "party", "args": ["mcp"] }
+  }
+}
+```
+
+`party_read` 用独立游标（`~/.config/party/cursors-mcp/`），与 `watch`/`serve` 互不干扰；传 `after` 可一次性回看历史而不推进游标。
+
 退出码：0 成功、1 通用失败、3 认证失败（token 无效/吊销）、4 被 loop guard 熔断（party send；serve 不用）、5 频道已归档、9 被限速、10 serve 单实例锁冲突。SIGINT/SIGTERM 停 serve 时退 130/143。

@@ -1,6 +1,7 @@
 import { EXIT_ERROR, EXIT_OK } from "@agentparty-mini/shared";
 import { channelCmd } from "./commands/channel";
 import { init } from "./commands/init";
+import { mcp } from "./commands/mcp";
 import { send } from "./commands/send";
 import { serve } from "./commands/serve";
 import { status } from "./commands/status";
@@ -29,6 +30,7 @@ usage:
   party channel archive <slug>
   party channel guard <slug> <n|off|default>
   party task create <title> | list | claim <id> | done <id> | block <id> <reason>
+  party mcp                                            # stdio MCP server（6 工具）
 
 flags: --server URL  --token TOKEN  override the bound config per-command`;
 
@@ -81,6 +83,10 @@ export async function main(argv: string[]): Promise<number> {
     }
     if (cmd === "task") {
       await taskCmd(rest);
+      return EXIT_OK;
+    }
+    if (cmd === "mcp") {
+      await mcp(rest);
       return EXIT_OK;
     }
     // 命令表在后续任务逐个填充
