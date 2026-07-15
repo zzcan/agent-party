@@ -1,6 +1,7 @@
 import type { ServerFrame, StatusState } from "@agentparty-mini/shared";
 import { loadMcpCursor, saveMcpCursor } from "../config";
 import { openChannel } from "../ws";
+import { createTask, listTasks, updateTask, type RestOpts } from "../rest";
 
 export interface ToolCtx {
   server: string;
@@ -132,6 +133,49 @@ export async function partyRead(ctx: ToolCtx, args: Record<string, unknown>, dep
     } finally {
       ch.close();
     }
+  } catch (e) {
+    return err(msg(e));
+  }
+}
+
+export async function partyTaskList(ctx: ToolCtx, args: Record<string, unknown>, deps: ToolDeps = {}): Promise<ToolResult> {
+  try {
+    const f = deps.fetchImpl ?? fetch;
+    const o: RestOpts = { server: ctx.server, token: ctx.token };
+    const res = await listTasks(o, chan(ctx, args), f);
+    return ok(JSON.stringify(res));
+  } catch (e) {
+    return err(msg(e));
+  }
+}
+
+export async function partyTaskUpdate(ctx: ToolCtx, args: Record<string, unknown>, deps: ToolDeps = {}): Promise<ToolResult> {
+  try {
+    const f = deps.fetchImpl ?? fetch;
+    const o: RestOpts = { server: ctx.server, token: ctx.token };
+    const channel = chan(ctx, args);
+    const action = args.action;
+    if (action === "create") {
+      const title = typeof args.title === "string" ? args.title.trim() : "";
+      if (!title) return err("title is required for create");
+      const t = (await createTask(o, channel, title, f)) as { id: number; title: string };
+      return ok(`created #${t.id}: ${t.title}`);
+    }
+    if (action === "claim" || action === "done") {
+      const id = Number(args.id);
+      if (!Number.isInteger(id) || id < 1) return err(`id is required for ${action}`);
+      await updateTask(o, channel, id, action, undefined, f);
+      return ok(action === "claim" ? `claimed #${id}` : `completed #${id}`);
+    }
+    if (action === "block") {
+      const id = Number(args.id);
+      if (!Number.isInteger(id) || id < 1) return err("id is required for block");
+      const reason = typeof args.reason === "string" ? args.reason.trim() : "";
+      if (!reason) return err("reason is required for block");
+      await updateTask(o, channel, id, "block", reason, f);
+      return ok(`blocked #${id}`);
+    }
+    return err("action must be create|claim|done|block");
   } catch (e) {
     return err(msg(e));
   }
