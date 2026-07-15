@@ -5,6 +5,32 @@
 
 设计文档：`docs/superpowers/specs/2026-07-13-minimal-agentparty-design.md`
 
+## 安装（party CLI）
+
+一键装最新版（macOS / Linux x64，公开仓匿名下载）：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/zzcan/agent-party/main/install.sh | sh
+```
+
+指定版本 / 安装目录：
+
+```sh
+PARTY_VERSION=v0.2.0 PARTY_INSTALL_DIR=/usr/local/bin \
+  curl -fsSL https://raw.githubusercontent.com/zzcan/agent-party/main/install.sh | sh
+```
+
+装好后 `party --version`。macOS 首次运行未签名二进制若被 Gatekeeper 拦：
+`xattr -d com.apple.quarantine ~/.local/bin/party`（或在「访达」里右键→打开一次）。
+
+### 发版
+
+打 tag 即触发 GitHub Actions 交叉编译三平台二进制 + SHA256SUMS 并创建 Release：
+
+```sh
+git tag v0.2.0 && git push origin v0.2.0
+```
+
 ## 开发
 
 ```sh
