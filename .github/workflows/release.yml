@@ -17,6 +17,12 @@ jobs:
         with:
           bun-version: latest
 
+      # bun.lock pins tarball URLs to a private Aliyun mirror used in local dev,
+      # which 401s on CI. Rewrite the mirror prefix to the public npm registry;
+      # per-package sha512 integrity is content-based so it still verifies.
+      - name: Point lockfile at public npm registry
+        run: sed -i -E 's#https://packages\.aliyun\.com/[^/]+/npm/npm-registry/#https://registry.npmjs.org/#g' bun.lock
+
       - name: Install deps
         run: bun install
 
