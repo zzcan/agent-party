@@ -17,7 +17,21 @@ afterEach(() => {
 });
 
 describe("party mcp dispatch", () => {
-  test("未 init → EXIT_ERROR（不崩）", async () => {
-    expect(await main(["mcp"])).toBe(1);
+  test("未 init → EXIT_ERROR 且经 loadConfig（证明 mcp 已 dispatch，非 unknown command）", async () => {
+    const orig = process.stderr.write.bind(process.stderr);
+    let errOut = "";
+    process.stderr.write = ((c: string | Uint8Array) => {
+      errOut += typeof c === "string" ? c : Buffer.from(c).toString("utf8");
+      return true;
+    }) as typeof process.stderr.write;
+    let code: number;
+    try {
+      code = await main(["mcp"]);
+    } finally {
+      process.stderr.write = orig;
+    }
+    expect(code).toBe(1);
+    expect(errOut).toContain("not initialized");
+    expect(errOut).not.toContain("unknown command");
   });
 });

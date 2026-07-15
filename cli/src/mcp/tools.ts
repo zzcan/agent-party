@@ -1,4 +1,4 @@
-import type { ServerFrame, StatusState } from "@agentparty-mini/shared";
+import type { StatusState } from "@agentparty-mini/shared";
 import { loadMcpCursor, saveMcpCursor } from "../config";
 import { openChannel } from "../ws";
 import { createTask, listTasks, updateTask, type RestOpts } from "../rest";
@@ -34,7 +34,9 @@ export async function partySend(ctx: ToolCtx, args: Record<string, unknown>, dep
     const open = deps.open ?? openChannel;
     const text = args.text;
     if (typeof text !== "string" || text.length === 0) return err("text is required");
-    const mentions = Array.isArray(args.mentions) ? (args.mentions as string[]) : [];
+    const mentions = Array.isArray(args.mentions)
+      ? (args.mentions as unknown[]).filter((m): m is string => typeof m === "string")
+      : [];
     let replyTo: number | undefined;
     if (args.reply_to !== undefined) {
       replyTo = Number(args.reply_to);
@@ -162,13 +164,13 @@ export async function partyTaskUpdate(ctx: ToolCtx, args: Record<string, unknown
       return ok(`created #${t.id}: ${t.title}`);
     }
     if (action === "claim" || action === "done") {
-      const id = Number(args.id);
+      const id = typeof args.id === "number" ? args.id : NaN;
       if (!Number.isInteger(id) || id < 1) return err(`id is required for ${action}`);
       await updateTask(o, channel, id, action, undefined, f);
       return ok(action === "claim" ? `claimed #${id}` : `completed #${id}`);
     }
     if (action === "block") {
-      const id = Number(args.id);
+      const id = typeof args.id === "number" ? args.id : NaN;
       if (!Number.isInteger(id) || id < 1) return err("id is required for block");
       const reason = typeof args.reason === "string" ? args.reason.trim() : "";
       if (!reason) return err("reason is required for block");
