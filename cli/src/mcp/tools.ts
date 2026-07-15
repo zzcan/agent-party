@@ -180,3 +180,84 @@ export async function partyTaskUpdate(ctx: ToolCtx, args: Record<string, unknown
     return err(msg(e));
   }
 }
+
+export interface ToolDef {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  handler: (ctx: ToolCtx, args: Record<string, unknown>, deps?: ToolDeps) => Promise<ToolResult>;
+}
+
+const CHANNEL_PROP = { channel: { type: "string", description: "频道 slug，缺省用绑定频道" } };
+
+export const TOOLS: ToolDef[] = [
+  {
+    name: "party_send",
+    description: "在频道发一条消息，可 @mention、可回复某条 seq。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        text: { type: "string", description: "消息正文" },
+        mentions: { type: "array", items: { type: "string" }, description: "被 @ 的身份名列表" },
+        reply_to: { type: "integer", minimum: 1, description: "回复的消息 seq" },
+        ...CHANNEL_PROP,
+      },
+      required: ["text"],
+    },
+    handler: partySend,
+  },
+  {
+    name: "party_read",
+    description: "按游标读增量消息。缺省从 MCP 独立游标续读并推进；给 after 则一次性回看不改游标。返回 {messages, cursor}。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        after: { type: "integer", minimum: 0, description: "一次性回看的起点 seq（不改持久游标）" },
+        ...CHANNEL_PROP,
+      },
+    },
+    handler: partyRead,
+  },
+  {
+    name: "party_status",
+    description: "更新自己在频道的状态（presence）。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        state: { type: "string", enum: ["working", "waiting", "blocked", "done"] },
+        note: { type: "string", description: "可选备注" },
+        ...CHANNEL_PROP,
+      },
+      required: ["state"],
+    },
+    handler: partyStatus,
+  },
+  {
+    name: "party_who",
+    description: "列出频道当前在线名单（presence）。",
+    inputSchema: { type: "object", properties: { ...CHANNEL_PROP } },
+    handler: partyWho,
+  },
+  {
+    name: "party_task_list",
+    description: "列出频道全部任务。",
+    inputSchema: { type: "object", properties: { ...CHANNEL_PROP } },
+    handler: partyTaskList,
+  },
+  {
+    name: "party_task_update",
+    description: "创建或流转任务：create 需 title；claim/done 需 id；block 需 id+reason。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["create", "claim", "done", "block"] },
+        title: { type: "string", description: "create 用" },
+        id: { type: "integer", minimum: 1, description: "claim/done/block 用" },
+        reason: { type: "string", description: "block 用" },
+        ...CHANNEL_PROP,
+      },
+      required: ["action"],
+    },
+    handler: partyTaskUpdate,
+  },
+];
